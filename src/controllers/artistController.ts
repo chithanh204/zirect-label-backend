@@ -62,7 +62,7 @@ export const getArtistStats = async (_req: AuthRequest, res: Response): Promise<
       totalArtists: artists.length,
       activeArtists: artists.filter((a) => a.status === 'active').length,
       pendingArtists: artists.filter((a) => a.status === 'pending').length,
-      totalStreams: artists.reduce((sum, a) => sum + a.totalStreams, 0),
+      totalStreams: albums.reduce((sum, a) => sum + a.totalStreams, 0),
       totalRevenue: artists.reduce((sum, a) => sum + a.totalRevenue, 0),
       totalAlbums: albums.length,
       distributedAlbums: albums.filter((a) => a.status === 'distributed').length,
@@ -105,7 +105,7 @@ export const updateArtistProfile = async (req: AuthRequest, res: Response): Prom
       return;
     }
 
-    const { bio, avatar } = req.body;
+    const { bio, avatar, website, paymentMethod, currency, bankAccount } = req.body;
     const artist = await db.getArtistByUserId(req.user.id);
 
     if (!artist) {
@@ -113,7 +113,14 @@ export const updateArtistProfile = async (req: AuthRequest, res: Response): Prom
       return;
     }
 
-    const updatedArtist = await db.updateArtist(artist.id, { bio, avatar });
+    const updateData: any = { bio, avatar, website, paymentMethod, currency, bankAccount };
+    
+    // If payment info is updated, set status to pending
+    if (paymentMethod || currency || bankAccount) {
+      updateData.paymentVerificationStatus = 'pending';
+    }
+
+    const updatedArtist = await db.updateArtist(artist.id, updateData);
 
     sendSuccess(
       res,
@@ -225,4 +232,24 @@ export const resetArtistPassword = async (req: AuthRequest, res: Response): Prom
   }
 };
 
+export const verifyPaymentInfo = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    
+    if (!req.user || req.user.type !== 'admin') {
+      sendError(res, 'Only admins can verify payment info', 403);
+      return;
+    }
 
+    const artist = await db.getArtistById(id);
+    if (!artist) {
+      sendError(res, 'Artist not found', 404);
+      return;
+    }
+
+    const updatedArtist = await db.updateArtist(id, { paymentVerificationStatus: 'verified' });
+    sendSuccess(res, updatedArtist, 'Payment info verified successfully', 200);
+  } catch (error) {
+    handleError(res, error, 'Failed to verify payment info');
+  }
+};

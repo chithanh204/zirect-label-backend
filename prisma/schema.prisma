@@ -36,6 +36,11 @@ model Artist {
   email          String   @unique
   bio            String?
   avatar         String?
+  website        String?
+  paymentMethod  String?
+  currency       String?
+  bankAccount    String?
+  paymentVerificationStatus PaymentStatus @default(unverified)
   followers      Int      @default(0)
   totalStreams   Int      @default(0)
   totalRevenue   Float    @default(0)
@@ -44,9 +49,11 @@ model Artist {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  albums     Album[]
-  analytics  Analytics[]
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  albums          Album[]
+  analytics       Analytics[]
+  collaborations  AlbumCollaborator[]
+  revenueSplits   RevenueSplit[]
 
   @@map("artists")
 }
@@ -55,6 +62,12 @@ enum ArtistStatus {
   active
   pending
   blocked
+}
+
+enum PaymentStatus {
+  unverified
+  pending
+  verified
 }
 
 model Album {
@@ -72,9 +85,13 @@ model Album {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  artist    Artist    @relation(fields: [artistId], references: [id], onDelete: Cascade)
-  tracks    Track[]
-  analytics Analytics[]
+  artist           Artist    @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  tracks           Track[]
+  analytics        Analytics[]
+  collaborators    AlbumCollaborator[]
+  revenueSplits    RevenueSplit[]
+  platformRevenues PlatformRevenue[]
+  platformPayments PlatformPayment[]
 
   @@map("albums")
 }
@@ -102,8 +119,80 @@ model Track {
   updatedAt DateTime @updatedAt
 
   album     Album    @relation(fields: [albumId], references: [id], onDelete: Cascade)
+  platforms TrackPlatform[]
 
   @@map("tracks")
+}
+
+model TrackPlatform {
+  id            String   @id @default(cuid())
+  trackId       String
+  platform      String   // "spotify", "youtube_music", "apple_music", "tiktok"
+  streams       Int      @default(0)
+  copyrightFlag Boolean  @default(false)
+  url           String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  track Track @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@unique([trackId, platform])
+  @@map("track_platforms")
+}
+
+model AlbumCollaborator {
+  id        String   @id @default(cuid())
+  albumId   String
+  artistId  String
+  role      String   @default("featured") // "featured", "producer", "songwriter"
+  createdAt DateTime @default(now())
+
+  album  Album  @relation(fields: [albumId], references: [id], onDelete: Cascade)
+  artist Artist @relation(fields: [artistId], references: [id], onDelete: Cascade)
+
+  @@unique([albumId, artistId])
+  @@map("album_collaborators")
+}
+
+model PlatformRevenue {
+  id           String   @id @default(cuid())
+  albumId      String
+  platform     String   // "spotify", "youtube_music", "apple_music", "tiktok"
+  totalRevenue Float    @default(0)
+  updatedAt    DateTime @updatedAt
+
+  album Album @relation(fields: [albumId], references: [id], onDelete: Cascade)
+
+  @@unique([albumId, platform])
+  @@map("platform_revenues")
+}
+
+model PlatformPayment {
+  id        String   @id @default(cuid())
+  albumId   String
+  platform  String   // "spotify", "youtube_music", "apple_music", "tiktok"
+  amount    Float
+  note      String?
+  paidAt    DateTime @default(now())
+
+  album Album @relation(fields: [albumId], references: [id], onDelete: Cascade)
+
+  @@map("platform_payments")
+}
+
+model RevenueSplit {
+  id          String   @id @default(cuid())
+  albumId     String
+  artistId    String
+  percentage  Float    // 0-100
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  album  Album  @relation(fields: [albumId], references: [id], onDelete: Cascade)
+  artist Artist @relation(fields: [artistId], references: [id], onDelete: Cascade)
+
+  @@unique([albumId, artistId])
+  @@map("revenue_splits")
 }
 
 model Analytics {
@@ -126,3 +215,4 @@ model Analytics {
   @@index([albumId])
   @@index([date])
 }
+

@@ -11,5 +11,6 @@ router.post('/:id/reset-password', authMiddleware, adminMiddleware, artistContro
 router.get('/profile/me', authMiddleware, artistMiddleware, artistController.getMyArtistProfile);
 router.put('/profile/me', authMiddleware, artistMiddleware, artistController.updateArtistProfile);
 router.get('/:id', artistController.getArtistById);
+router.put('/:id/payment/verify', authMiddleware, adminMiddleware, artistController.verifyPaymentInfo);
 
 export default router;

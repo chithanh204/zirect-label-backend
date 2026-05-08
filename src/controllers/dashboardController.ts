@@ -15,7 +15,7 @@ export const getDashboardOverview = async (_req: AuthRequest, res: Response): Pr
     const activeArtists = artists.filter((a) => a.status === 'active').length;
     const totalAlbums = albums.length;
     const distributedAlbums = albums.filter((a) => a.status === 'distributed').length;
-    const totalStreams = analytics.reduce((sum, a) => sum + a.streams, 0);
+    const totalStreams = albums.reduce((sum, a) => sum + a.totalStreams, 0);
     const totalRevenue = analytics.reduce((sum, a) => sum + a.revenue, 0);
 
     const recentAlbums = [...albums]

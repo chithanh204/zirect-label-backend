@@ -217,3 +217,181 @@ export const createAlbumAdmin = async (req: AuthRequest, res: Response): Promise
   }
 };
 
+// ============ ALBUM DETAIL ============
+export const getAlbumDetail = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const album = await db.getAlbumDetail(id);
+
+    if (!album) {
+      sendError(res, 'Album not found', 404);
+      return;
+    }
+
+    sendSuccess(res, album, 'Album detail retrieved successfully', 200);
+  } catch (error) {
+    handleError(res, error, 'Failed to get album detail');
+  }
+};
+
+// ============ COLLABORATORS ============
+export const addCollaborator = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user || req.user.type !== 'admin') {
+      sendError(res, 'Admin access required', 403);
+      return;
+    }
+
+    const { id } = req.params;
+    const { artistId, role } = req.body;
+
+    if (!artistId) {
+      sendError(res, 'artistId is required', 400);
+      return;
+    }
+
+    const album = await db.getAlbumById(id);
+    if (!album) {
+      sendError(res, 'Album not found', 404);
+      return;
+    }
+
+    // Can't add the main artist as collaborator
+    if (album.artistId === artistId) {
+      sendError(res, 'Cannot add the main artist as a collaborator', 400);
+      return;
+    }
+
+    const collaborator = await db.addCollaborator(id, artistId, role || 'featured');
+    sendSuccess(res, collaborator, 'Collaborator added successfully', 201);
+  } catch (error: any) {
+    if (error?.code === 'P2002') {
+      sendError(res, 'This artist is already a collaborator', 409);
+      return;
+    }
+    handleError(res, error, 'Failed to add collaborator');
+  }
+};
+
+export const removeCollaborator = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user || req.user.type !== 'admin') {
+      sendError(res, 'Admin access required', 403);
+      return;
+    }
+
+    const { id, artistId } = req.params;
+    await db.removeCollaborator(id, artistId);
+    sendSuccess(res, null, 'Collaborator removed successfully', 200);
+  } catch (error) {
+    handleError(res, error, 'Failed to remove collaborator');
+  }
+};
+
+// ============ TRACK PLATFORMS ============
+export const updateTrackPlatform = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user || req.user.type !== 'admin') {
+      sendError(res, 'Admin access required', 403);
+      return;
+    }
+
+    const { trackId } = req.params;
+    const { platform, streams, copyrightFlag, url } = req.body;
+
+    if (!platform) {
+      sendError(res, 'platform is required', 400);
+      return;
+    }
+
+    const validPlatforms = ['spotify', 'youtube_music', 'apple_music', 'tiktok'];
+    if (!validPlatforms.includes(platform)) {
+      sendError(res, 'Invalid platform', 400);
+      return;
+    }
+
+    const result = await db.upsertTrackPlatform(trackId, platform, {
+      streams: streams !== undefined ? parseInt(streams) : undefined,
+      copyrightFlag: copyrightFlag !== undefined ? Boolean(copyrightFlag) : undefined,
+      url: url !== undefined ? url : undefined,
+    });
+
+    sendSuccess(res, result, 'Track platform updated', 200);
+  } catch (error) {
+    handleError(res, error, 'Failed to update track platform');
+  }
+};
+
+// ============ REVENUE SPLITS ============
+export const getRevenueSplits = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const splits = await db.getRevenueSplits(id);
+    sendSuccess(res, splits, 'Revenue splits retrieved', 200);
+  } catch (error) {
+    handleError(res, error, 'Failed to get revenue splits');
+  }
+};
+
+export const updateRevenueSplits = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user || req.user.type !== 'admin') {
+      sendError(res, 'Admin access required', 403);
+      return;
+    }
+
+    const { id } = req.params;
+    const { splits } = req.body;
+
+    if (!splits || !Array.isArray(splits)) {
+      sendError(res, 'splits array is required', 400);
+      return;
+    }
+
+    // Validate total = 100
+    const total = splits.reduce((sum: number, s: any) => sum + (s.percentage || 0), 0);
+    if (Math.abs(total - 100) > 0.01) {
+      sendError(res, `Total percentage must equal 100% (currently ${total}%)`, 400);
+      return;
+    }
+
+    const result = await db.setRevenueSplits(id, splits);
+    sendSuccess(res, result, 'Revenue splits updated', 200);
+  } catch (error) {
+    handleError(res, error, 'Failed to update revenue splits');
+  }
+};
+// ============ PLATFORM REVENUE & PAYMENTS ============
+export const updatePlatformRevenue = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id, platform } = req.params;
+    const { totalRevenue } = req.body;
+
+    if (totalRevenue === undefined || typeof totalRevenue !== 'number') {
+      sendError(res, 'Valid totalRevenue number is required', 400);
+      return;
+    }
+
+    const result = await db.upsertPlatformRevenue(id, platform, totalRevenue);
+    sendSuccess(res, result, 'Platform revenue updated', 200);
+  } catch (error) {
+    handleError(res, error, 'Failed to update platform revenue');
+  }
+};
+
+export const addPlatformPayment = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id, platform } = req.params;
+    const { amount, note } = req.body;
+
+    if (!amount || typeof amount !== 'number' || amount <= 0) {
+      sendError(res, 'Valid payment amount > 0 is required', 400);
+      return;
+    }
+
+    const result = await db.addPlatformPayment(id, platform, amount, note);
+    sendSuccess(res, result, 'Platform payment logged successfully', 201);
+  } catch (error) {
+    handleError(res, error, 'Failed to log platform payment');
+  }
+};

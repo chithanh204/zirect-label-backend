@@ -122,3 +122,38 @@ export const logout = async (_req: AuthRequest, res: Response): Promise<void> =>
     handleError(res, error, 'Logout failed');
   }
 };
+
+export const updatePassword = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      sendError(res, 'Unauthorized', 401);
+      return;
+    }
+
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      sendError(res, 'Current and new password are required', 400);
+      return;
+    }
+
+    const user = await db.getUserById(req.user.id);
+    if (!user) {
+      sendError(res, 'User not found', 404);
+      return;
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      sendError(res, 'Incorrect current password', 401);
+      return;
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    await db.updateUser(user.id, { password: hashedPassword });
+    sendSuccess(res, null, 'Password updated successfully', 200);
+  } catch (error) {
+    handleError(res, error, 'Failed to update password');
+  }
+};
