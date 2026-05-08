@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import type { AuthRequest } from '@middleware/auth';
 import { sendSuccess, sendError, handleError } from '@utils/response';
-import { db } from '@models/db';
+import { db } from '@models/prisma';
 
 export const getAnalytics = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -10,7 +10,7 @@ export const getAnalytics = async (req: AuthRequest, res: Response): Promise<voi
       return;
     }
 
-    const artist = db.getArtistByUserId(req.user.id);
+    const artist = await db.getArtistByUserId(req.user.id);
     if (!artist) {
       sendError(res, 'Artist not found', 404);
       return;
@@ -18,7 +18,7 @@ export const getAnalytics = async (req: AuthRequest, res: Response): Promise<voi
 
     const { albumId } = req.query;
 
-    let analytics = db.getAnalyticsByArtistId(artist.id);
+    let analytics = await db.getAnalyticsByArtistId(artist.id);
 
     if (albumId) {
       analytics = analytics.filter((a) => a.albumId === albumId);
@@ -37,11 +37,12 @@ export const getAnalytics = async (req: AuthRequest, res: Response): Promise<voi
     }, {});
 
     const byRegion = analytics.reduce((acc: any, a) => {
-      if (!acc[a.region]) {
-        acc[a.region] = { streams: 0, revenue: 0 };
+      const region = a.region || 'Unknown';
+      if (!acc[region]) {
+        acc[region] = { streams: 0, revenue: 0 };
       }
-      acc[a.region].streams += a.streams;
-      acc[a.region].revenue += a.revenue;
+      acc[region].streams += a.streams;
+      acc[region].revenue += a.revenue;
       return acc;
     }, {});
 
@@ -76,14 +77,16 @@ export const getDashboardStats = async (req: AuthRequest, res: Response): Promis
       return;
     }
 
-    const artist = db.getArtistByUserId(req.user.id);
+    const artist = await db.getArtistByUserId(req.user.id);
     if (!artist) {
       sendError(res, 'Artist not found', 404);
       return;
     }
 
-    const artistAnalytics = db.getAnalyticsByArtistId(artist.id);
-    const artistAlbums = db.getAlbumsByArtistId(artist.id);
+    const [artistAnalytics, artistAlbums] = await Promise.all([
+      db.getAnalyticsByArtistId(artist.id),
+      db.getAlbumsByArtistId(artist.id)
+    ]);
 
     const totalStreams = artistAnalytics.reduce((sum, a) => sum + a.streams, 0);
     const totalRevenue = artistAnalytics.reduce((sum, a) => sum + a.revenue, 0);
@@ -119,13 +122,13 @@ export const getTopTracks = async (req: AuthRequest, res: Response): Promise<voi
       return;
     }
 
-    const artist = db.getArtistByUserId(req.user.id);
+    const artist = await db.getArtistByUserId(req.user.id);
     if (!artist) {
       sendError(res, 'Artist not found', 404);
       return;
     }
 
-    const artistAlbums = db.getAlbumsByArtistId(artist.id);
+    const artistAlbums = await db.getAlbumsByArtistId(artist.id);
 
     const allTracks = artistAlbums.flatMap((album) =>
       album.tracks.map((track) => ({

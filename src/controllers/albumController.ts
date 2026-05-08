@@ -1,37 +1,39 @@
 import { Response } from 'express';
 import type { AuthRequest } from '@middleware/auth';
 import { sendSuccess, sendError, handleError } from '@utils/response';
-import { db } from '@models/db';
-import type { Album } from '@schemas/index';
+import { db } from '@models/prisma';
 
 export const getAllAlbums = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { page = '1', limit = '10', status, artistId } = req.query;
 
-    let albums = db.getAlbums();
-
-    if (status) {
-      albums = albums.filter((album) => album.status === status);
-    }
-
-    if (artistId) {
-      albums = albums.filter((album) => album.artistId === artistId as string);
-    }
-
     const pageNum = parseInt(page as string, 10);
     const limitNum = parseInt(limit as string, 10);
-    const startIdx = (pageNum - 1) * limitNum;
-    const endIdx = startIdx + limitNum;
-    const paginatedAlbums = albums.slice(startIdx, endIdx);
+    const skip = (pageNum - 1) * limitNum;
+
+    // Build where clause for Prisma
+    const where: any = {};
+    if (status) {
+      where.status = status as string;
+    }
+    if (artistId) {
+      where.artistId = artistId as string;
+    }
+
+    const albums = await db.getAlbums({ skip, take: limitNum, status: status as string | undefined });
+
+    // Get total count for pagination
+    const allAlbums = await db.getAlbums();
+    const total = allAlbums.length;
 
     sendSuccess(
       res,
       {
-        albums: paginatedAlbums,
-        total: albums.length,
+        albums,
+        total,
         page: pageNum,
         limit: limitNum,
-        pages: Math.ceil(albums.length / limitNum),
+        pages: Math.ceil(total / limitNum),
       },
       'Albums retrieved successfully',
       200
@@ -44,7 +46,7 @@ export const getAllAlbums = async (req: AuthRequest, res: Response): Promise<voi
 export const getAlbumById = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const album = db.getAlbumById(id);
+    const album = await db.getAlbumById(id);
 
     if (!album) {
       sendError(res, 'Album not found', 404);
@@ -64,13 +66,13 @@ export const getMyAlbums = async (req: AuthRequest, res: Response): Promise<void
       return;
     }
 
-    const artist = db.getArtistByUserId(req.user.id);
+    const artist = await db.getArtistByUserId(req.user.id);
     if (!artist) {
       sendError(res, 'Artist profile not found', 404);
       return;
     }
 
-    const albums = db.getAlbumsByArtistId(artist.id);
+    const albums = await db.getAlbumsByArtistId(artist.id);
     sendSuccess(res, albums, 'Artist albums retrieved successfully', 200);
   } catch (error) {
     handleError(res, error, 'Failed to get artist albums');
@@ -91,34 +93,28 @@ export const createAlbum = async (req: AuthRequest, res: Response): Promise<void
       return;
     }
 
-    const artist = db.getArtistByUserId(req.user.id);
+    const artist = await db.getArtistByUserId(req.user.id);
     if (!artist) {
       sendError(res, 'Artist not found', 404);
       return;
     }
 
-    const newAlbum: Album = {
-      id: `album-${Date.now()}`,
+    const newAlbum = await db.createAlbum({
       title,
       artistId: artist.id,
       artistName: artist.name,
       releaseDate: new Date(releaseDate || Date.now()),
       status: 'draft',
+      totalStreams: 0,
+      revenue: 0,
       tracks: tracks.map((track: any, idx: number) => ({
-        id: `track-${Date.now()}-${idx}`,
         title: track.title,
-        duration: track.duration,
+        duration: track.duration || 0,
         streams: 0,
         revenue: 0,
         position: idx + 1,
       })),
-      totalStreams: 0,
-      revenue: 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    db.createAlbum(newAlbum);
+    });
 
     sendSuccess(res, newAlbum, 'Album created successfully', 201);
   } catch (error) {
@@ -142,13 +138,13 @@ export const updateAlbumStatus = async (req: AuthRequest, res: Response): Promis
       return;
     }
 
-    const album = db.getAlbumById(id);
+    const album = await db.getAlbumById(id);
     if (!album) {
       sendError(res, 'Album not found', 404);
       return;
     }
 
-    const updatedAlbum = db.updateAlbum(id, { status: status as any });
+    const updatedAlbum = await db.updateAlbum(id, { status: status as any });
 
     sendSuccess(res, updatedAlbum, 'Album status updated successfully', 200);
   } catch (error) {
@@ -158,7 +154,7 @@ export const updateAlbumStatus = async (req: AuthRequest, res: Response): Promis
 
 export const getAlbumStats = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const albums = db.getAlbums();
+    const albums = await db.getAlbums();
 
     const stats = {
       totalAlbums: albums.length,
@@ -175,3 +171,49 @@ export const getAlbumStats = async (_req: AuthRequest, res: Response): Promise<v
     handleError(res, error, 'Failed to get album stats');
   }
 };
+
+export const createAlbumAdmin = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user || req.user.type !== 'admin') {
+      sendError(res, 'Only admins can use this endpoint', 403);
+      return;
+    }
+
+    const { title, artistId, coverArt, releaseDate, upc, tracks } = req.body;
+
+    if (!title || !artistId) {
+      sendError(res, 'Title and artistId are required', 400);
+      return;
+    }
+
+    const artist = await db.getArtistById(artistId);
+    if (!artist) {
+      sendError(res, 'Artist not found', 404);
+      return;
+    }
+
+    const newAlbum = await db.createAlbum({
+      title,
+      artistId: artist.id,
+      artistName: artist.name,
+      coverArt: coverArt || undefined,
+      releaseDate: releaseDate ? new Date(releaseDate) : undefined,
+      upc: upc || undefined,
+      status: 'draft',
+      totalStreams: 0,
+      revenue: 0,
+      tracks: (tracks || []).map((track: any, idx: number) => ({
+        title: track.title,
+        duration: track.duration || 0,
+        streams: 0,
+        revenue: 0,
+        position: idx + 1,
+      })),
+    });
+
+    sendSuccess(res, newAlbum, 'Album created successfully', 201);
+  } catch (error) {
+    handleError(res, error, 'Failed to create album');
+  }
+};
+

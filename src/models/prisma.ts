@@ -28,16 +28,22 @@ export const db = {
   },
 
   // ============ ARTISTS ============
-  async getArtists(options?: { skip?: number; take?: number }) {
+  async getArtists(options?: { skip?: number; take?: number; where?: any }) {
     return await prisma.artist.findMany({
+      where: options?.where,
       skip: options?.skip,
       take: options?.take,
+      include: {
+        _count: {
+          select: { albums: true }
+        }
+      },
       orderBy: { createdAt: 'desc' },
     });
   },
 
-  async getArtistsCount() {
-    return await prisma.artist.count();
+  async getArtistsCount(where?: any) {
+    return await prisma.artist.count({ where });
   },
 
   async getArtistById(id: string) {

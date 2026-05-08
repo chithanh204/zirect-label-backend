@@ -8,6 +8,7 @@ router.get('/', albumController.getAllAlbums);
 router.get('/stats', albumController.getAlbumStats);
 router.get('/my/list', authMiddleware, artistMiddleware, albumController.getMyAlbums);
 router.post('/', authMiddleware, artistMiddleware, albumController.createAlbum);
+router.post('/admin', authMiddleware, adminMiddleware, albumController.createAlbumAdmin);
 router.get('/:id', albumController.getAlbumById);
 router.put('/:id/status', authMiddleware, adminMiddleware, albumController.updateAlbumStatus);
 

@@ -10,6 +10,7 @@ import artistRoutes from '@routes/artistRoutes';
 import albumRoutes from '@routes/albumRoutes';
 import analyticsRoutes from '@routes/analyticsRoutes';
 import dashboardRoutes from '@routes/dashboardRoutes';
+import uploadRoutes from '@routes/uploadRoutes';
 
 const app: Express = express();
 
@@ -48,6 +49,7 @@ app.use('/api/artists', artistRoutes);
 app.use('/api/albums', albumRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/admin', dashboardRoutes);
+app.use('/api/upload', uploadRoutes);
 
 // 404 Handler
 app.use(notFoundHandler);

@@ -47,6 +47,8 @@ export class Database {
       totalRevenue: 250000,
       status: 'active',
       joinedAt: new Date('2024-02-01'),
+      createdAt: new Date('2024-02-01'),
+      updatedAt: new Date('2024-02-01'),
     },
     {
       id: 'artist-2',
@@ -60,6 +62,8 @@ export class Database {
       totalRevenue: 450000,
       status: 'active',
       joinedAt: new Date('2024-02-15'),
+      createdAt: new Date('2024-02-15'),
+      updatedAt: new Date('2024-02-15'),
     },
   ];
 

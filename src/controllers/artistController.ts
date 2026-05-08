@@ -1,34 +1,31 @@
 import { Response } from 'express';
 import type { AuthRequest } from '@middleware/auth';
 import { sendSuccess, sendError, handleError } from '@utils/response';
-import { db } from '@models/db';
+import { db } from '@models/prisma';
+import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 
 export const getAllArtists = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { page = '1', limit = '10', search = '' } = req.query;
-
-    let artists = db.getArtists();
-
-    if (search) {
-      artists = artists.filter((artist) =>
-        artist.name.toLowerCase().includes((search as string).toLowerCase())
-      );
-    }
+    const { page = '1', limit = '10' } = req.query;
 
     const pageNum = parseInt(page as string, 10);
     const limitNum = parseInt(limit as string, 10);
-    const startIdx = (pageNum - 1) * limitNum;
-    const endIdx = startIdx + limitNum;
-    const paginatedArtists = artists.slice(startIdx, endIdx);
+    const skip = (pageNum - 1) * limitNum;
+
+    const [artists, total] = await Promise.all([
+      db.getArtists({ skip, take: limitNum }),
+      db.getArtistsCount()
+    ]);
 
     sendSuccess(
       res,
       {
-        artists: paginatedArtists,
-        total: artists.length,
+        artists,
+        total,
         page: pageNum,
         limit: limitNum,
-        pages: Math.ceil(artists.length / limitNum),
+        pages: Math.ceil(total / limitNum),
       },
       'Artists retrieved successfully',
       200
@@ -41,7 +38,7 @@ export const getAllArtists = async (req: AuthRequest, res: Response): Promise<vo
 export const getArtistById = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const artist = db.getArtistById(id);
+    const artist = await db.getArtistById(id);
 
     if (!artist) {
       sendError(res, 'Artist not found', 404);
@@ -56,8 +53,10 @@ export const getArtistById = async (req: AuthRequest, res: Response): Promise<vo
 
 export const getArtistStats = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const artists = db.getArtists();
-    const albums = db.getAlbums();
+    const [artists, albums] = await Promise.all([
+      db.getArtists(),
+      db.getAlbums()
+    ]);
 
     const stats = {
       totalArtists: artists.length,
@@ -86,7 +85,7 @@ export const getMyArtistProfile = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
-    const artist = db.getArtistByUserId(req.user.id);
+    const artist = await db.getArtistByUserId(req.user.id);
 
     if (!artist) {
       sendError(res, 'Artist profile not found', 404);
@@ -107,14 +106,14 @@ export const updateArtistProfile = async (req: AuthRequest, res: Response): Prom
     }
 
     const { bio, avatar } = req.body;
-    const artist = db.getArtistByUserId(req.user.id);
+    const artist = await db.getArtistByUserId(req.user.id);
 
     if (!artist) {
       sendError(res, 'Artist not found', 404);
       return;
     }
 
-    const updatedArtist = db.updateArtist(artist.id, { bio, avatar });
+    const updatedArtist = await db.updateArtist(artist.id, { bio, avatar });
 
     sendSuccess(
       res,
@@ -134,23 +133,35 @@ export const createArtist = async (req: AuthRequest, res: Response): Promise<voi
       return;
     }
 
-    const { userId, name, email, bio, avatar } = req.body;
+    const { name, email, bio, avatar } = req.body;
 
-    if (!userId || !name || !email) {
-      sendError(res, 'userId, name, and email are required', 400);
+    if (!name || !email) {
+      sendError(res, 'Name and email are required', 400);
       return;
     }
 
-    // Check if artist already exists for this user
-    const existingArtist = db.getArtistByUserId(userId);
-    if (existingArtist) {
-      sendError(res, 'Artist profile already exists for this user', 409);
+    // Check if a user with this email already exists
+    const existingUser = await db.getUserByEmail(email);
+    if (existingUser) {
+      sendError(res, 'A user with this email already exists', 409);
       return;
     }
 
-    const newArtist = {
-      id: `artist-${Date.now()}`,
-      userId,
+    // Auto-generate a random password for the artist's user account
+    const generatedPassword = crypto.randomBytes(8).toString('hex'); // 16 char hex string
+    const hashedPassword = await bcrypt.hash(generatedPassword, 10);
+
+    // Create user account automatically
+    const newUser = await db.createUser({
+      email,
+      name,
+      password: hashedPassword,
+      type: 'artist' as const,
+    });
+
+    // Create artist profile linked to the new user
+    const created = await db.createArtist({
+      userId: newUser.id,
       name,
       email,
       bio: bio || '',
@@ -158,17 +169,16 @@ export const createArtist = async (req: AuthRequest, res: Response): Promise<voi
       followers: 0,
       totalStreams: 0,
       totalRevenue: 0,
-      status: 'pending' as const,
+      status: 'pending' as any,
       joinedAt: new Date(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    const created = db.createArtist(newArtist);
+    });
 
     sendSuccess(
       res,
-      created,
+      {
+        artist: created,
+        generatedPassword, // Return the plain password so admin can share it with the artist
+      },
       'Artist created successfully',
       201
     );
@@ -176,3 +186,43 @@ export const createArtist = async (req: AuthRequest, res: Response): Promise<voi
     handleError(res, error, 'Failed to create artist');
   }
 };
+
+export const resetArtistPassword = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user || req.user.type !== 'admin') {
+      sendError(res, 'Only admins can reset artist passwords', 403);
+      return;
+    }
+
+    const { id } = req.params;
+
+    // Find the artist
+    const artist = await db.getArtistById(id);
+    if (!artist) {
+      sendError(res, 'Artist not found', 404);
+      return;
+    }
+
+    // Generate a new random password
+    const newPassword = crypto.randomBytes(8).toString('hex');
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update the user's password
+    await db.updateUser(artist.userId, { password: hashedPassword });
+
+    sendSuccess(
+      res,
+      {
+        artistId: artist.id,
+        artistName: artist.name,
+        newPassword,
+      },
+      'Password reset successfully',
+      200
+    );
+  } catch (error) {
+    handleError(res, error, 'Failed to reset password');
+  }
+};
+
+

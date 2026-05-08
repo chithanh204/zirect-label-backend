@@ -1,13 +1,15 @@
 import { Response } from 'express';
 import type { AuthRequest } from '@middleware/auth';
 import { sendSuccess, sendError, handleError } from '@utils/response';
-import { db } from '@models/db';
+import { db } from '@models/prisma';
 
 export const getDashboardOverview = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const artists = db.getArtists();
-    const albums = db.getAlbums();
-    const analytics = db.getAnalytics();
+    const [artists, albums, analytics] = await Promise.all([
+      db.getArtists(),
+      db.getAlbums(),
+      db.getAnalytics()
+    ]);
 
     const totalArtists = artists.length;
     const activeArtists = artists.filter((a) => a.status === 'active').length;
@@ -16,7 +18,7 @@ export const getDashboardOverview = async (_req: AuthRequest, res: Response): Pr
     const totalStreams = analytics.reduce((sum, a) => sum + a.streams, 0);
     const totalRevenue = analytics.reduce((sum, a) => sum + a.revenue, 0);
 
-    const recentAlbums = albums
+    const recentAlbums = [...albums]
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       .slice(0, 5);
 
@@ -53,8 +55,10 @@ export const getReports = async (req: AuthRequest, res: Response): Promise<void>
   try {
     const { reportType = 'revenue', period = '30' } = req.query;
 
-    const artists = db.getArtists();
-    const analytics = db.getAnalytics();
+    const [artists, analytics] = await Promise.all([
+      db.getArtists(),
+      db.getAnalytics()
+    ]);
 
     let reportData: any = {};
 
@@ -87,7 +91,7 @@ export const getReports = async (req: AuthRequest, res: Response): Promise<void>
             .filter((a) => a.artistId === artist.id)
             .reduce((sum, a) => sum + a.streams, 0),
         })),
-        topArtists: artists.sort((a, b) => b.totalStreams - a.totalStreams).slice(0, 10),
+        topArtists: [...artists].sort((a, b) => b.totalStreams - a.totalStreams).slice(0, 10),
       };
     }
 
@@ -99,7 +103,7 @@ export const getReports = async (req: AuthRequest, res: Response): Promise<void>
 
 export const getAlbumProcessingQueue = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const albums = db.getAlbums();
+    const albums = await db.getAlbums();
 
     const queue = albums
       .filter((a) => ['submitted', 'approved', 'delivering'].includes(a.status))
@@ -131,7 +135,7 @@ const getAlbumProgress = (status: string): number => {
   const progressMap: Record<string, number> = {
     draft: 10,
     submitted: 25,
-    'cover-art': 50,
+    approved: 50,
     delivering: 75,
     distributed: 100,
   };
@@ -142,13 +146,13 @@ export const approveAlbum = async (req: AuthRequest, res: Response): Promise<voi
   try {
     const { id } = req.params;
 
-    const album = db.getAlbumById(id);
+    const album = await db.getAlbumById(id);
     if (!album) {
       sendError(res, 'Album not found', 404);
       return;
     }
 
-    const updatedAlbum = db.updateAlbum(id, { status: 'approved' });
+    const updatedAlbum = await db.updateAlbum(id, { status: 'approved' });
 
     sendSuccess(res, updatedAlbum, 'Album approved successfully', 200);
   } catch (error) {
@@ -161,13 +165,13 @@ export const rejectAlbum = async (req: AuthRequest, res: Response): Promise<void
     const { id } = req.params;
     const { reason } = req.body;
 
-    const album = db.getAlbumById(id);
+    const album = await db.getAlbumById(id);
     if (!album) {
       sendError(res, 'Album not found', 404);
       return;
     }
 
-    const updatedAlbum = db.updateAlbum(id, {
+    const updatedAlbum = await db.updateAlbum(id, {
       status: 'rejected',
       rejectionReason: reason,
     });

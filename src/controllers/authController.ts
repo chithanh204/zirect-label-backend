@@ -2,8 +2,9 @@ import { Response } from 'express';
 import type { AuthRequest } from '@middleware/auth';
 import { sendSuccess, sendError, handleError } from '@utils/response';
 import { generateToken } from '@utils/jwt';
-import { db } from '@models/db';
+import { db } from '@models/prisma';
 import type { User } from '@schemas/index';
+import bcrypt from 'bcryptjs';
 
 export const login = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -14,16 +15,22 @@ export const login = async (req: AuthRequest, res: Response): Promise<void> => {
       return;
     }
 
-    const user = db.getUserByEmail(email);
+    const user = await db.getUserByEmail(email);
 
     if (!user) {
       sendError(res, 'Invalid email or password', 401);
       return;
     }
 
-    // Mock auth - In production, use bcrypt.compare()
-    const userWithoutPassword = { ...user };
-    delete (userWithoutPassword as any).password;
+    // Verify password with bcrypt
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      sendError(res, 'Invalid email or password', 401);
+      return;
+    }
+
+    const userWithoutPassword: Omit<typeof user, 'password'> & { password?: string } = { ...user };
+    delete userWithoutPassword.password;
 
     const token = generateToken(userWithoutPassword as User);
 
@@ -43,37 +50,31 @@ export const login = async (req: AuthRequest, res: Response): Promise<void> => {
 
 export const register = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { email, name, password, userType } = req.body;
+    const { email, name, password } = req.body;
 
     if (!email || !name || !password) {
       sendError(res, 'Email, name, and password are required', 400);
       return;
     }
 
-    // Only allow registering as 'artist' for public registration
-    // Admin users must be created by system administrators
-    const type = userType === 'admin' ? 'artist' : 'artist'; // Default to artist
-
-    const existingUser = db.getUserByEmail(email);
+    const existingUser = await db.getUserByEmail(email);
     if (existingUser) {
       sendError(res, 'Email already registered', 409);
       return;
     }
 
-    const newUser: User = {
-      id: `user-${Date.now()}`,
+    // Hash password with bcrypt
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const newUser = await db.createUser({
       email,
       name,
-      password: 'hashed_password',
-      type: type as 'artist' | 'admin',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+      password: hashedPassword,
+      type: 'artist' as const,
+    });
 
-    db.createUser(newUser);
-
-    const userWithoutPassword = { ...newUser };
-    delete (userWithoutPassword as any).password;
+    const userWithoutPassword: Omit<typeof newUser, 'password'> & { password?: string } = { ...newUser };
+    delete userWithoutPassword.password;
 
     const token = generateToken(userWithoutPassword as User);
 
@@ -98,15 +99,15 @@ export const getCurrentUser = async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    const user = db.getUserById(req.user.id);
+    const user = await db.getUserById(req.user.id);
 
     if (!user) {
       sendError(res, 'User not found', 404);
       return;
     }
 
-    const userWithoutPassword = { ...user };
-    delete (userWithoutPassword as any).password;
+    const userWithoutPassword: Omit<typeof user, 'password'> & { password?: string } = { ...user };
+    delete userWithoutPassword.password;
 
     sendSuccess(res, userWithoutPassword, 'User retrieved successfully', 200);
   } catch (error) {
