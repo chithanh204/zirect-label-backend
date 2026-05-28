@@ -1,9 +1,8 @@
 import { spotifyService } from './spotifyService';
 import { youtubeService } from './youtubeService';
-import { lastfmService } from './lastfmService';
 
 export interface PlatformTrack {
-  platform: 'spotify' | 'youtube' | 'lastfm';
+  platform: 'spotify' | 'youtube';
   id: string;
   name: string;
   artist: string;
@@ -17,7 +16,7 @@ export interface PlatformTrack {
 }
 
 export interface PlatformArtist {
-  platform: 'spotify' | 'youtube' | 'lastfm';
+  platform: 'spotify' | 'youtube';
   id: string;
   name: string;
   followers?: number;
@@ -40,11 +39,10 @@ export class PlatformSearchService {
   async searchTracksMultiPlatform(
     query: string,
     maxResults: number = 5
-  ): Promise<{ spotify: PlatformTrack[]; youtube: PlatformTrack[]; lastfm: PlatformTrack[] }> {
+  ): Promise<{ spotify: PlatformTrack[]; youtube: PlatformTrack[] }> {
     const results = {
       spotify: [] as PlatformTrack[],
       youtube: [] as PlatformTrack[],
-      lastfm: [] as PlatformTrack[],
     };
 
     try {
@@ -80,23 +78,6 @@ export class PlatformSearchService {
       console.error('YouTube search failed:', error);
     }
 
-    try {
-      // Search Last.fm
-      const lastfmTracks = await lastfmService.searchTrack(query, undefined, maxResults);
-      results.lastfm = lastfmTracks.map(t => ({
-        platform: 'lastfm' as const,
-        id: `${t.artist}-${t.name}`,
-        name: t.name,
-        artist: t.artist,
-        playcount: t.playcount,
-        listeners: t.listeners,
-        imageUrl: t.imageUrl,
-        url: t.url,
-      }));
-    } catch (error) {
-      console.error('Last.fm search failed:', error);
-    }
-
     return results;
   }
 
@@ -106,11 +87,10 @@ export class PlatformSearchService {
   async searchArtistsMultiPlatform(
     query: string,
     maxResults: number = 5
-  ): Promise<{ spotify: PlatformArtist[]; youtube: PlatformArtist[]; lastfm: PlatformArtist[] }> {
+  ): Promise<{ spotify: PlatformArtist[]; youtube: PlatformArtist[] }> {
     const results = {
       spotify: [] as PlatformArtist[],
       youtube: [] as PlatformArtist[],
-      lastfm: [] as PlatformArtist[],
     };
 
     try {
@@ -149,49 +129,6 @@ export class PlatformSearchService {
       console.error('YouTube search failed:', error);
     }
 
-    try {
-      // Search Last.fm
-      const lastfmArtists = await lastfmService.searchArtist(query, maxResults);
-      results.lastfm = lastfmArtists.map(a => ({
-        platform: 'lastfm' as const,
-        id: a.name,
-        name: a.name,
-        listeners: a.listeners,
-        imageUrl: a.imageUrl,
-        bio: a.bio,
-        url: a.url,
-      }));
-    } catch (error) {
-      console.error('Last.fm search failed:', error);
-    }
-
-    return results;
-  }
-
-  /**
-   * Get top tracks for an artist across platforms
-   */
-  async getArtistTopTracks(artistName: string, limit: number = 10): Promise<PlatformTrack[]> {
-    const results: PlatformTrack[] = [];
-
-    try {
-      const lastfmTracks = await lastfmService.getArtistTopTracks(artistName, limit);
-      lastfmTracks.forEach(t => {
-        results.push({
-          platform: 'lastfm',
-          id: `${t.artist}-${t.name}`,
-          name: t.name,
-          artist: t.artist,
-          playcount: t.playcount,
-          listeners: t.listeners,
-          imageUrl: t.imageUrl,
-          url: t.url,
-        });
-      });
-    } catch (error) {
-      console.error('Last.fm top tracks failed:', error);
-    }
-
     return results;
   }
 
@@ -222,38 +159,12 @@ export class PlatformSearchService {
   }
 
   /**
-   * Get similar artists
-   */
-  async getSimilarArtists(artistName: string, limit: number = 10): Promise<PlatformArtist[]> {
-    const results: PlatformArtist[] = [];
-
-    try {
-      const similarArtists = await lastfmService.getSimilarArtists(artistName, limit);
-      similarArtists.forEach(a => {
-        results.push({
-          platform: 'lastfm',
-          id: a.name,
-          name: a.name,
-          listeners: a.listeners,
-          imageUrl: a.imageUrl,
-          url: a.url,
-        });
-      });
-    } catch (error) {
-      console.error('Last.fm similar artists failed:', error);
-    }
-
-    return results;
-  }
-
-  /**
    * Get detailed track info from all platforms
    */
   async getTrackDetails(artistName: string, trackName: string): Promise<Record<string, any>> {
     const details: Record<string, any> = {
       spotify: null,
       youtube: null,
-      lastfm: null,
     };
 
     try {
@@ -284,13 +195,6 @@ export class PlatformSearchService {
       console.error('YouTube track details failed:', error);
     }
 
-    try {
-      const lastfmTrack = await lastfmService.getTrack(artistName, trackName);
-      details.lastfm = lastfmTrack;
-    } catch (error) {
-      console.error('Last.fm track details failed:', error);
-    }
-
     return details;
   }
 
@@ -301,7 +205,6 @@ export class PlatformSearchService {
     const details: Record<string, any> = {
       spotify: null,
       youtube: null,
-      lastfm: null,
     };
 
     try {
@@ -324,13 +227,6 @@ export class PlatformSearchService {
       }
     } catch (error) {
       console.error('YouTube artist details failed:', error);
-    }
-
-    try {
-      const lastfmArtist = await lastfmService.getArtist(artistName);
-      details.lastfm = lastfmArtist;
-    } catch (error) {
-      console.error('Last.fm artist details failed:', error);
     }
 
     return details;

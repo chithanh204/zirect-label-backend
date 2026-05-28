@@ -1,6 +1,5 @@
 export { youtubeService, YouTubeService } from './youtubeService';
 export { spotifyService, SpotifyService } from './spotifyService';
-export { lastfmService, LastFmService } from './lastfmService';
 export { analyticsSyncService, AnalyticsSyncService } from './analyticsSyncService';
 export { platformSearchService, PlatformSearchService } from './platformSearchService';
 export { albumImportService, AlbumImportService } from './albumImportService';

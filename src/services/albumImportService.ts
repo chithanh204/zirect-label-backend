@@ -1,6 +1,5 @@
 import { spotifyService } from './spotifyService';
 import { youtubeService } from './youtubeService';
-import { lastfmService } from './lastfmService';
 
 export interface AlbumImportResult {
   platform: string;
@@ -95,7 +94,6 @@ export class AlbumImportService {
     const results: Record<string, AlbumImportResult> = {
       spotify: await this.searchAlbumOnSpotify(albumTitle, artistName),
       youtube_music: await this.searchAlbumOnYouTube(albumTitle, artistName),
-      lastfm: await this.searchAlbumOnLastFm(albumTitle, artistName),
     };
 
     return results;
@@ -179,38 +177,6 @@ export class AlbumImportService {
         platform: 'youtube_music',
         success: false,
         message: `Error searching YouTube: ${(error as any).message}`,
-      };
-    }
-  }
-
-  /**
-   * Search for album on Last.fm
-   */
-  private async searchAlbumOnLastFm(albumTitle: string, artistName: string): Promise<AlbumImportResult> {
-    try {
-      const artist = await lastfmService.getArtist(artistName);
-
-      if (!artist) {
-        return {
-          platform: 'lastfm',
-          success: false,
-          message: 'Artist not found on Last.fm',
-        };
-      }
-
-      return {
-        platform: 'lastfm',
-        success: true,
-        title: albumTitle,
-        artist: artistName,
-        imageUrl: artist.imageUrl,
-        message: `Found artist "${artistName}" on Last.fm`,
-      };
-    } catch (error) {
-      return {
-        platform: 'lastfm',
-        success: false,
-        message: `Error searching Last.fm: ${(error as any).message}`,
       };
     }
   }

@@ -13,7 +13,7 @@ router.post('/admin', authMiddleware, adminMiddleware, albumController.createAlb
 // Album detail
 router.get('/:id/detail', albumController.getAlbumDetail);
 
-// Spotify tracks & LastFM streams
+// Spotify tracks integration
 router.get('/:id/spotify-tracks', albumController.getAlbumSpotifyTracks);
 
 // Collaborators
@@ -25,6 +25,7 @@ router.put('/tracks/:trackId/platforms', authMiddleware, adminMiddleware, albumC
 
 // Track metadata & addition
 router.post('/:id/tracks', authMiddleware, adminMiddleware, albumController.addTrack);
+router.delete('/tracks/:trackId', authMiddleware, adminMiddleware, albumController.deleteTrack);
 router.put('/tracks/:trackId/metadata', authMiddleware, adminMiddleware, albumController.updateTrackMetadata);
 
 // Revenue splits

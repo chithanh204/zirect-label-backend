@@ -1,7 +1,6 @@
 import { db } from '../models/prisma';
 import { youtubeService } from './youtubeService';
 import { spotifyService } from './spotifyService';
-import { lastfmService } from './lastfmService';
 
 interface SyncResult {
   success: boolean;
@@ -31,9 +30,6 @@ export class AnalyticsSyncService {
 
       const youtubeResult = await this.syncYouTubeArtist(artist);
       results.push(youtubeResult);
-
-      const lastfmResult = await this.syncLastFmArtist(artist);
-      results.push(lastfmResult);
 
       // Update artist stats with aggregated data
       await this.updateArtistStats(artistId);
@@ -66,9 +62,6 @@ export class AnalyticsSyncService {
 
       const youtubeResult = await this.syncYouTubeAlbum(album, tracks);
       results.push(youtubeResult);
-
-      const lastfmResult = await this.syncLastFmAlbum(album, tracks);
-      results.push(lastfmResult);
 
       // Update album stats with aggregated data
       await this.updateAlbumStats(albumId);
@@ -190,53 +183,6 @@ export class AnalyticsSyncService {
   }
 
   /**
-   * Sync artist data from Last.fm
-   */
-  private async syncLastFmArtist(artist: any): Promise<SyncResult> {
-    try {
-      const lastfmArtist = await lastfmService.getArtist(artist.name);
-
-      if (!lastfmArtist) {
-        return {
-          success: false,
-          platform: 'lastfm',
-          artistId: artist.id,
-          message: 'Artist not found on Last.fm',
-          dataCount: 0,
-        };
-      }
-
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      await db.createAnalytics({
-        artistId: artist.id,
-        platform: 'lastfm',
-        date: today,
-        streams: lastfmArtist.playcount,
-        revenue: 0,
-      });
-
-      return {
-        success: true,
-        platform: 'lastfm',
-        artistId: artist.id,
-        message: `Synced Last.fm data for ${artist.name}`,
-        dataCount: 1,
-      };
-    } catch (error) {
-      console.error('Last.fm artist sync error:', error);
-      return {
-        success: false,
-        platform: 'lastfm',
-        artistId: artist.id,
-        message: `Error syncing Last.fm: ${(error as any).message}`,
-        dataCount: 0,
-      };
-    }
-  }
-
-  /**
    * Sync album data from Spotify
    */
   private async syncSpotifyAlbum(album: any, tracks: any[]): Promise<SyncResult> {
@@ -341,54 +287,6 @@ export class AnalyticsSyncService {
   }
 
   /**
-   * Sync album data from Last.fm
-   */
-  private async syncLastFmAlbum(album: any, tracks: any[]): Promise<SyncResult> {
-    try {
-      let syncedCount = 0;
-
-      for (const track of tracks) {
-        const lastfmTrack = await lastfmService.getTrack(album.artistName, track.title);
-
-        if (lastfmTrack) {
-          // Store track stats in analytics
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-
-          await db.createAnalytics({
-            artistId: album.artistId,
-            albumId: album.id,
-            platform: 'lastfm',
-            date: today,
-            streams: lastfmTrack.playcount,
-          });
-
-          syncedCount++;
-        }
-      }
-
-      return {
-        success: syncedCount > 0,
-        platform: 'lastfm',
-        artistId: album.artistId,
-        albumId: album.id,
-        message: `Synced ${syncedCount} tracks on Last.fm for album ${album.title}`,
-        dataCount: syncedCount,
-      };
-    } catch (error) {
-      console.error('Last.fm album sync error:', error);
-      return {
-        success: false,
-        platform: 'lastfm',
-        artistId: album.artistId,
-        albumId: album.id,
-        message: `Error syncing Last.fm album: ${(error as any).message}`,
-        dataCount: 0,
-      };
-    }
-  }
-
-  /**
    * Update artist statistics from aggregated analytics
    */
   private async updateArtistStats(artistId: string): Promise<void> {
@@ -439,7 +337,6 @@ export class AnalyticsSyncService {
       const byPlatform: Record<string, any> = {
         spotify: { streams: 0, revenue: 0, dataPoints: 0 },
         youtube_music: { streams: 0, revenue: 0, dataPoints: 0 },
-        lastfm: { streams: 0, revenue: 0, dataPoints: 0 },
       };
 
       filtered.forEach(item => {
@@ -481,7 +378,6 @@ export class AnalyticsSyncService {
       const byPlatform: Record<string, any> = {
         spotify: { streams: 0, revenue: 0, dataPoints: 0 },
         youtube_music: { streams: 0, revenue: 0, dataPoints: 0 },
-        lastfm: { streams: 0, revenue: 0, dataPoints: 0 },
       };
 
       filtered.forEach(item => {

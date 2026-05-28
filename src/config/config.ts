@@ -27,10 +27,6 @@ export const config = {
     clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
     redirectUri: process.env.SPOTIFY_REDIRECT_URI || 'http://localhost:5000/api/auth/spotify/callback',
   },
-  lastfm: {
-    apiKey: process.env.LASTFM_API_KEY,
-    secret: process.env.LASTFM_SECRET,
-  },
   cloudinary: {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME,
     apiKey: process.env.CLOUDINARY_API_KEY,

@@ -15,21 +15,21 @@ export const authMiddleware = (
     const token = req.headers.authorization?.split(' ')[1];
 
     if (!token) {
-      sendError(res, 'No token provided', 401, 'Unauthorized');
+      sendError(res, 'No token provided', 401);
       return;
     }
 
     const decoded = verifyToken(token);
 
     if (!decoded) {
-      sendError(res, 'Invalid or expired token', 401, 'Unauthorized');
+      sendError(res, 'Invalid or expired token', 401);
       return;
     }
 
     req.user = decoded;
     next();
   } catch (error) {
-    sendError(res, 'Authentication failed', 401, 'Unauthorized');
+    sendError(res, 'Authentication failed', 401);
   }
 };
 
@@ -39,7 +39,7 @@ export const adminMiddleware = (
   next: NextFunction
 ): void => {
   if (req.user?.type !== 'admin') {
-    sendError(res, 'Admin access required', 403, 'Forbidden');
+    sendError(res, 'Admin access required', 403);
     return;
   }
   next();
@@ -51,7 +51,7 @@ export const artistMiddleware = (
   next: NextFunction
 ): void => {
   if (req.user?.type !== 'artist') {
-    sendError(res, 'Artist access required', 403, 'Forbidden');
+    sendError(res, 'Artist access required', 403);
     return;
   }
   next();

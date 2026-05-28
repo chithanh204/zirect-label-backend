@@ -32,5 +32,5 @@ export const notFoundHandler = (
   res: Response,
   _next: NextFunction
 ): void => {
-  sendError(res, `Route not found: ${req.originalUrl}`, 404, 'Not Found');
+  sendError(res, `Route not found: ${req.originalUrl}`, 404);
 };

@@ -17,13 +17,11 @@ export const sendSuccess = <T>(
 
 export const sendError = (
   res: Response,
-  error: string,
-  statusCode: number = 400,
-  message: string = 'Error'
+  message: string,
+  statusCode: number = 400
 ): Response => {
   return res.status(statusCode).json({
     success: false,
-    error,
     message,
     statusCode,
   } as ApiResponse<null>);
@@ -36,7 +34,7 @@ export const handleError = (
 ): Response => {
   console.error('[ERROR]', error);
 
-  const statusCode = error?.statusCode || 500;
+  const statusCode = error?.statusCode || error?.status || 500;
   const message = error?.message || defaultMessage;
 
   return sendError(res, message, statusCode);

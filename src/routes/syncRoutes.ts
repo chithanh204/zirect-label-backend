@@ -4,7 +4,6 @@ import {
   syncAlbumData,
   searchTracks,
   searchArtists,
-  getArtistTopTracks,
   getTrackDetails,
   getArtistDetails,
   getArtistAnalytics,
@@ -44,13 +43,6 @@ router.get('/search/tracks', searchTracks);
  * Query params: query, limit
  */
 router.get('/search/artists', searchArtists);
-
-/**
- * GET /api/sync/artist/:artistName/top-tracks
- * Get top tracks for an artist from Last.fm
- * Query params: limit
- */
-router.get('/artist/:artistName/top-tracks', getArtistTopTracks);
 
 /**
  * GET /api/sync/track-details

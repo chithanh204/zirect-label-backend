@@ -3,7 +3,8 @@ import type { AuthRequest } from '@middleware/auth';
 import { sendSuccess, sendError, handleError } from '@utils/response';
 import { db, prisma } from '@models/prisma';
 import { spotifyService } from '@services/spotifyService';
-import { lastfmService } from '@services/lastfmService';
+import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 
 export const getAllAlbums = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -109,7 +110,7 @@ export const createAlbum = async (req: AuthRequest, res: Response): Promise<void
       status: 'draft',
       totalStreams: 0,
       revenue: 0,
-      tracks: tracks.map((track: any, idx: number) => ({
+      tracks: tracks.map((track: any) => ({
         title: track.title,
         streams: 0,
         revenue: 0,
@@ -602,7 +603,7 @@ export const deleteAlbum = async (req: AuthRequest, res: Response): Promise<void
   }
 };
 
-// ============ SPOTIFY & LASTFM INTEGRATION ============
+// ============ SPOTIFY INTEGRATION ============
 export const getAlbumSpotifyTracks = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -631,32 +632,21 @@ export const getAlbumSpotifyTracks = async (req: AuthRequest, res: Response): Pr
     // Fetch tracks from Spotify
     const spotifyTracks = await spotifyService.getAlbumTracks(album.albumId);
 
-    // Enrich with LastFM stream data
-    const tracksWithStreams = await Promise.all(
-      spotifyTracks.map(async (track) => {
-        let lastfmData = null;
-        try {
-          // Try to get track info from LastFM
-          lastfmData = await lastfmService.getTrack(track.artistName, track.name);
-        } catch (error) {
-          console.warn(`Failed to fetch LastFM data for ${track.artistName} - ${track.name}:`, error);
-        }
-
-        return {
-          spotifyId: track.id,
-          title: track.name,
-          artist: track.artistName,
-          duration: Math.round(track.duration / 1000), // Convert ms to seconds
-          previewUrl: track.previewUrl,
-          spotifyUrl: track.externalUrl,
-          streams: lastfmData?.playcount || 0,
-          youtubeStreams: 0, // YouTube Music streams (placeholder - no public API available)
-          listeners: lastfmData?.listeners || 0,
-          spotifyPopularity: track.popularity,
-          lastfmUrl: lastfmData?.url,
-        };
-      })
-    );
+    // Filter and format tracks
+    const tracksWithInfo = spotifyTracks.map((track) => {
+      return {
+        spotifyId: track.id,
+        title: track.name,
+        artist: track.artistName,
+        duration: Math.round(track.duration / 1000), // Convert ms to seconds
+        previewUrl: track.previewUrl,
+        spotifyUrl: track.externalUrl,
+        streams: 0, // Placeholder
+        youtubeStreams: 0, // Placeholder
+        listeners: 0, // Placeholder
+        spotifyPopularity: track.popularity,
+      };
+    });
 
     // Return both album metadata and tracks
     const response = {
@@ -668,7 +658,7 @@ export const getAlbumSpotifyTracks = async (req: AuthRequest, res: Response): Pr
         genres: spotifyAlbum?.genres,
         images: spotifyAlbum?.images,
       },
-      tracks: tracksWithStreams,
+      tracks: tracksWithInfo,
     };
 
     sendSuccess(res, response, 'Album tracks and metadata retrieved successfully', 200);
@@ -755,6 +745,57 @@ export const getAlbumPaymentSummary = async (req: AuthRequest, res: Response): P
       }
     }
 
+    // Auto-create placeholder system accounts for custom/external artists
+
+    for (const name of artistRolesMap.keys()) {
+      const trimmedName = name.trim();
+      if (!trimmedName) continue;
+
+      const hasSystemArtist = systemArtists.some(
+        (a) => a.name.toLowerCase() === trimmedName.toLowerCase() ||
+               (a.composerName && a.composerName.toLowerCase() === trimmedName.toLowerCase())
+      );
+
+      if (!hasSystemArtist) {
+        const cleanName = trimmedName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        const randStr = crypto.randomBytes(3).toString('hex');
+        const tempEmail = `temp_${cleanName || 'artist'}_${randStr}@zirect.com`;
+        
+        const plainPassword = crypto.randomBytes(8).toString('hex');
+        const hashedPassword = await bcrypt.hash(plainPassword, 10);
+
+        try {
+          // Create the User
+          const newUser = await prisma.user.create({
+            data: {
+              email: tempEmail,
+              name: trimmedName,
+              password: hashedPassword,
+              type: 'artist',
+            }
+          });
+
+          // Create the Artist profile
+          const newArtist = await prisma.artist.create({
+            data: {
+              userId: newUser.id,
+              name: trimmedName,
+              email: tempEmail,
+              followers: 0,
+              totalStreams: 0,
+              totalRevenue: 0,
+              status: 'active',
+              isActive: true,
+            }
+          });
+
+          systemArtists.push(newArtist);
+        } catch (e) {
+          console.error(`Failed to auto-create artist profile for "${trimmedName}":`, e);
+        }
+      }
+    }
+
     // Compute stats for each artist
     const totalRevenue = album.revenue || 0;
     const paymentLogDetails = (album as any).paymentLogDetails || [];
@@ -770,54 +811,82 @@ export const getAlbumPaymentSummary = async (req: AuthRequest, res: Response): P
       artist: detail.paymentLog.artist,
     }));
 
-    const artistsList = [];
+    const systemArtistsMap = new Map<string, any>();
+    const customArtistsMap = new Map<string, any>();
 
     for (const [name, rolesSet] of artistRolesMap.entries()) {
       const roles = Array.from(rolesSet);
       // Try to find matching system artist by name (case-insensitive)
       const systemArtist = systemArtists.find(
-        (a) => a.name.toLowerCase() === name.toLowerCase()
+        (a) => a.name.toLowerCase() === name.trim().toLowerCase()
       );
 
-      let isSystem = false;
-      let artistId = null;
-      let paypalAccount = '';
-      let composerName = '';
-      let percentage = 0;
-      let share = 0;
-      let totalPaid = 0;
-      let totalUnpaid = 0;
-
       if (systemArtist) {
-        isSystem = true;
-        artistId = systemArtist.id;
-        paypalAccount = systemArtist.paypalAccount || '';
-        composerName = systemArtist.composerName || '';
+        const artistId = systemArtist.id;
+        if (systemArtistsMap.has(artistId)) {
+          const existing = systemArtistsMap.get(artistId);
+          roles.forEach(role => existing.roles.add(role));
+        } else {
+          // Find split percentage
+          const split = album.revenueSplits.find((s) => s.artistId === systemArtist.id);
+          const percentage = split ? split.percentage : 0;
+          const share = totalRevenue * (percentage / 100);
 
-        // Find split percentage
-        const split = album.revenueSplits.find((s) => s.artistId === systemArtist.id);
-        percentage = split ? split.percentage : 0;
-        share = totalRevenue * (percentage / 100);
+          // Find total paid to this artist for this album
+          const totalPaid = paymentLogs
+            .filter((p: any) => p.artistId === systemArtist.id)
+            .reduce((sum: number, p: any) => sum + p.amount, 0);
 
-        // Find total paid to this artist for this album
-        totalPaid = paymentLogs
-          .filter((p: any) => p.artistId === systemArtist.id)
-          .reduce((sum: number, p: any) => sum + p.amount, 0);
+          const totalUnpaid = share - totalPaid;
 
-        totalUnpaid = share - totalPaid;
+          systemArtistsMap.set(artistId, {
+            name: systemArtist.name,
+            roles: new Set(roles),
+            isSystem: true,
+            artistId: systemArtist.id,
+            email: systemArtist.email,
+            paypalAccount: systemArtist.paypalAccount || '',
+            composerName: systemArtist.composerName || '',
+            percentage,
+            share,
+            totalPaid,
+            totalUnpaid,
+          });
+        }
+      } else {
+        const normalizedName = name.trim().toLowerCase();
+        if (customArtistsMap.has(normalizedName)) {
+          const existing = customArtistsMap.get(normalizedName);
+          roles.forEach(role => existing.roles.add(role));
+        } else {
+          customArtistsMap.set(normalizedName, {
+            name: name.trim(),
+            roles: new Set(roles),
+            isSystem: false,
+            artistId: null,
+            email: '',
+            paypalAccount: '',
+            composerName: '',
+            percentage: 0,
+            share: 0,
+            totalPaid: 0,
+            totalUnpaid: 0,
+          });
+        }
       }
+    }
 
+    const artistsList = [];
+    for (const info of systemArtistsMap.values()) {
       artistsList.push({
-        name,
-        roles,
-        isSystem,
-        artistId,
-        paypalAccount,
-        composerName,
-        percentage,
-        share,
-        totalPaid,
-        totalUnpaid,
+        ...info,
+        roles: Array.from(info.roles),
+      });
+    }
+    for (const info of customArtistsMap.values()) {
+      artistsList.push({
+        ...info,
+        roles: Array.from(info.roles),
       });
     }
 
@@ -839,6 +908,7 @@ export const getAlbumPaymentSummary = async (req: AuthRequest, res: Response): P
       200
     );
   } catch (error) {
+    console.error('[getAlbumPaymentSummary] Unexpected error:', error);
     handleError(res, error, 'Failed to get album payment summary');
   }
 };
@@ -972,6 +1042,34 @@ export const addTrack = async (req: AuthRequest, res: Response): Promise<void> =
     sendSuccess(res, newTrack, 'Track added successfully', 201);
   } catch (error) {
     handleError(res, error, 'Failed to add track');
+  }
+};
+
+export const deleteTrack = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user || req.user.type !== 'admin') {
+      sendError(res, 'Admin access required', 403);
+      return;
+    }
+
+    const { trackId } = req.params;
+
+    const track = await prisma.track.findUnique({
+      where: { id: trackId }
+    });
+
+    if (!track) {
+      sendError(res, 'Track not found', 404);
+      return;
+    }
+
+    await prisma.track.delete({
+      where: { id: trackId }
+    });
+
+    sendSuccess(res, null, 'Track deleted successfully', 200);
+  } catch (error) {
+    handleError(res, error, 'Failed to delete track');
   }
 };
 

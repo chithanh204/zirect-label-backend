@@ -96,26 +96,6 @@ export const searchArtists = async (req: Request, res: Response) => {
 };
 
 /**
- * Get artist top tracks from Last.fm
- */
-export const getArtistTopTracks = async (req: Request, res: Response) => {
-  try {
-    const { artistName } = req.params;
-    const { limit = 10 } = req.query;
-
-    const tracks = await platformSearchService.getArtistTopTracks(
-      artistName,
-      parseInt(limit as string) || 10
-    );
-
-    return sendSuccess(res, tracks, 'Top tracks retrieved', 200);
-  } catch (error) {
-    console.error('Get top tracks error:', error);
-    return sendError(res, (error as any).message || 'Failed to get top tracks', 500);
-  }
-};
-
-/**
  * Get detailed track info from all platforms
  */
 export const getTrackDetails = async (req: Request, res: Response) => {
