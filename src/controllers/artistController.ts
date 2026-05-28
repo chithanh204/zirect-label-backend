@@ -136,11 +136,11 @@ export const updateArtistProfile = async (req: AuthRequest, res: Response): Prom
 export const createArtist = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     if (!req.user || req.user.type !== 'admin') {
-      sendError(res, 'Only admins can create artist accounts', 403);
+      sendError(res, 'Only admins can create accounts', 403);
       return;
     }
 
-    const { name, email, bio, avatar } = req.body;
+    const { name, email, bio, avatar, paypalAccount, composerName, isAdmin, password } = req.body;
 
     if (!name || !email) {
       sendError(res, 'Name and email are required', 400);
@@ -154,43 +154,98 @@ export const createArtist = async (req: AuthRequest, res: Response): Promise<voi
       return;
     }
 
-    // Auto-generate a random password for the artist's user account
-    const generatedPassword = crypto.randomBytes(8).toString('hex'); // 16 char hex string
-    const hashedPassword = await bcrypt.hash(generatedPassword, 10);
+    // Auto-generate password if not provided
+    const plainPassword = password || crypto.randomBytes(8).toString('hex');
+    const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
     // Create user account automatically
     const newUser = await db.createUser({
       email,
       name,
       password: hashedPassword,
-      type: 'artist' as const,
+      type: isAdmin ? ('admin' as const) : ('artist' as const),
     });
 
-    // Create artist profile linked to the new user
-    const created = await db.createArtist({
-      userId: newUser.id,
-      name,
-      email,
-      bio: bio || '',
-      avatar: avatar || undefined,
-      followers: 0,
-      totalStreams: 0,
-      totalRevenue: 0,
-      status: 'pending' as any,
-      joinedAt: new Date(),
-    });
+    let createdArtist = null;
+    if (!isAdmin) {
+      // Create artist profile linked to the new user ONLY for non-admins
+      createdArtist = await db.createArtist({
+        userId: newUser.id,
+        name,
+        email,
+        bio: bio || '',
+        avatar: avatar || undefined,
+        paypalAccount: paypalAccount || undefined,
+        composerName: composerName || undefined,
+        isAdmin: false,
+        followers: 0,
+        totalStreams: 0,
+        totalRevenue: 0,
+        status: 'pending' as any,
+        joinedAt: new Date(),
+      });
+    }
 
     sendSuccess(
       res,
       {
-        artist: created,
-        generatedPassword, // Return the plain password so admin can share it with the artist
+        artist: createdArtist,
+        user: newUser,
+        generatedPassword: plainPassword, // Return the password so the admin can copy/view it
       },
-      'Artist created successfully',
+      isAdmin ? 'Admin created successfully' : 'Artist created successfully',
       201
     );
   } catch (error) {
-    handleError(res, error, 'Failed to create artist');
+    handleError(res, error, 'Failed to create account');
+  }
+};
+
+export const updateArtistAdmin = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user || req.user.type !== 'admin') {
+      sendError(res, 'Only admins can update artist details', 403);
+      return;
+    }
+
+    const { id } = req.params;
+    const { name, email, bio, avatar, status, paypalAccount, composerName, isActive, isAdmin } = req.body;
+
+    const artist = await db.getArtistById(id);
+    if (!artist) {
+      sendError(res, 'Artist not found', 404);
+      return;
+    }
+
+    // Prepare update data
+    const updateData: any = {};
+    if (name !== undefined) updateData.name = name;
+    if (email !== undefined) updateData.email = email;
+    if (bio !== undefined) updateData.bio = bio;
+    if (avatar !== undefined) updateData.avatar = avatar;
+    if (status !== undefined) updateData.status = status;
+    if (paypalAccount !== undefined) updateData.paypalAccount = paypalAccount;
+    if (composerName !== undefined) updateData.composerName = composerName;
+    if (isActive !== undefined) updateData.isActive = Boolean(isActive);
+    if (isAdmin !== undefined) updateData.isAdmin = Boolean(isAdmin);
+
+    const updatedArtist = await db.updateArtist(id, updateData);
+
+    // If email, name, or isAdmin was updated, we should also update the corresponding User
+    const userUpdate: any = {};
+    if (name !== undefined) userUpdate.name = name;
+    if (email !== undefined) userUpdate.email = email;
+    if (isAdmin !== undefined) {
+      userUpdate.type = isAdmin ? 'admin' : 'artist';
+    }
+
+    if (Object.keys(userUpdate).length > 0) {
+      await db.updateUser(artist.userId, userUpdate);
+    }
+
+    sendSuccess(res, updatedArtist, 'Artist updated successfully by admin', 200);
+  } catch (error) {
+    handleError(res, error, 'Failed to update artist details by admin');
   }
 };
 
@@ -251,5 +306,185 @@ export const verifyPaymentInfo = async (req: AuthRequest, res: Response): Promis
     sendSuccess(res, updatedArtist, 'Payment info verified successfully', 200);
   } catch (error) {
     handleError(res, error, 'Failed to verify payment info');
+  }
+};
+
+// PHASE 3: Artist Dashboard & My Albums
+
+export const getArtistDashboard = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      sendError(res, 'Unauthorized', 401);
+      return;
+    }
+
+    const artist = await db.getArtistByUserId(req.user.id);
+    if (!artist) {
+      sendError(res, 'Artist profile not found', 404);
+      return;
+    }
+
+    // Get artist's albums
+    const artistAlbums = await db.getAlbumsByArtistId(artist.id);
+
+    // Calculate dashboard stats for this artist
+    const totalAlbums = artistAlbums.length;
+    const distributedAlbums = artistAlbums.filter((a) => a.status === 'distributed').length;
+    const totalStreams = artistAlbums.reduce((sum, a) => sum + a.totalStreams, 0);
+    const totalRevenue = artistAlbums.reduce((sum, a) => sum + a.revenue, 0);
+
+    // Get recent activities (latest 5 albums)
+    const recentActivities = [...artistAlbums]
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      .slice(0, 5)
+      .map((album) => ({
+        id: album.id,
+        title: album.title,
+        status: album.status,
+        releaseDate: album.releaseDate,
+        totalStreams: album.totalStreams,
+        revenue: album.revenue,
+        updatedAt: album.updatedAt,
+      }));
+
+    sendSuccess(
+      res,
+      {
+        stats: {
+          totalAlbums,
+          distributedAlbums,
+          totalStreams,
+          totalRevenue: artist.totalRevenue,
+          balance: artist.balance,
+          totalPaid: artist.totalPaid,
+          averageStreamsPerAlbum:
+            totalAlbums > 0 ? Math.round(totalStreams / totalAlbums) : 0,
+          averageRevenuePerAlbum:
+            totalAlbums > 0 ? Math.round(totalRevenue / totalAlbums) : 0,
+        },
+        recentActivities,
+      },
+      'Artist dashboard retrieved successfully',
+      200
+    );
+  } catch (error) {
+    handleError(res, error, 'Failed to get artist dashboard');
+  }
+};
+
+export const getArtistAlbums = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      sendError(res, 'Unauthorized', 401);
+      return;
+    }
+
+    const { status, page = '1', limit = '10' } = req.query;
+
+    const artist = await db.getArtistByUserId(req.user.id);
+    if (!artist) {
+      sendError(res, 'Artist profile not found', 404);
+      return;
+    }
+
+    // Get artist's albums (with optional status filter)
+    let artistAlbums = await db.getAlbumsByArtistId(artist.id);
+
+    if (status) {
+      artistAlbums = artistAlbums.filter((a) => a.status === status);
+    }
+
+    // Sort by date descending
+    artistAlbums = artistAlbums.sort(
+      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
+
+    // Paginate
+    const pageNum = parseInt(page as string, 10);
+    const limitNum = parseInt(limit as string, 10);
+    const skip = (pageNum - 1) * limitNum;
+    const paginatedAlbums = artistAlbums.slice(skip, skip + limitNum);
+
+    const albumsWithRevenue = paginatedAlbums.map((album) => ({
+      id: album.id,
+      title: album.title,
+      artistName: album.artistName,
+      releaseDate: album.releaseDate,
+      coverArt: album.coverArt,
+      status: album.status,
+      totalStreams: album.totalStreams,
+      totalRevenue: album.revenue,
+      unpaidRevenue: album.revenue, // Will be calculated more precisely if payment tracking is added
+      createdAt: album.createdAt,
+      updatedAt: album.updatedAt,
+    }));
+
+    sendSuccess(
+      res,
+      {
+        albums: albumsWithRevenue,
+        total: artistAlbums.length,
+        page: pageNum,
+        limit: limitNum,
+        pages: Math.ceil(artistAlbums.length / limitNum),
+      },
+      'Artist albums retrieved successfully',
+      200
+    );
+  } catch (error) {
+    handleError(res, error, 'Failed to get artist albums');
+  }
+};
+
+export const getArtistAlbumRevenue = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      sendError(res, 'Unauthorized', 401);
+      return;
+    }
+
+    const { id } = req.params;
+
+    const artist = await db.getArtistByUserId(req.user.id);
+    if (!artist) {
+      sendError(res, 'Artist profile not found', 404);
+      return;
+    }
+
+    const album = await db.getAlbumById(id);
+    if (!album) {
+      sendError(res, 'Album not found', 404);
+      return;
+    }
+
+    // Verify the album belongs to this artist
+    if (album.artistId !== artist.id) {
+      sendError(res, 'Unauthorized: This album does not belong to you', 403);
+      return;
+    }
+
+    // Get revenue summary
+    const revenueSummary = {
+      albumId: album.id,
+      albumTitle: album.title,
+      totalRevenue: album.revenue,
+      totalStreams: album.totalStreams,
+      status: album.status,
+      releaseDate: album.releaseDate,
+      // In a complete implementation, this would have:
+      // - paidRevenue
+      // - unpaidRevenue
+      // - payment history logs
+      // - per-platform breakdown
+    };
+
+    sendSuccess(
+      res,
+      revenueSummary,
+      'Album revenue information retrieved successfully',
+      200
+    );
+  } catch (error) {
+    handleError(res, error, 'Failed to get album revenue information');
   }
 };

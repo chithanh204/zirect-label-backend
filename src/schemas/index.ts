@@ -29,14 +29,28 @@ export interface Album {
   title: string;
   artistId: string;
   artistName: string;
+  albumId?: string;
+  youtubeId?: string;
   releaseDate: Date;
   coverArt?: string;
-  status: 'draft' | 'submitted' | 'approved' | 'delivering' | 'distributed' | 'rejected';
+  status: 'draft' | 'submitted' | 'approved' | 'distributed' | 'rejected';
   tracks: Track[];
   totalStreams: number;
   revenue: number;
   upc?: string;
   rejectionReason?: string;
+
+  // Album metadata
+  displayArtist?: string;
+  primaryArtists?: string;
+  featuringArtists?: string;
+  pYear?: number;
+  cYear?: number;
+  pLine?: string;
+  cLine?: string;
+  genre?: string;
+  subgenre?: string;
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -50,6 +64,18 @@ export interface Track {
   streams: number;
   revenue: number;
   position: number;
+
+  // Track metadata
+  composers?: string;
+  lyricists?: string;
+  language?: string;
+  pYear?: number;
+  cYear?: number;
+  pLine?: string;
+  cLine?: string;
+  genre?: string;
+  subgenre?: string;
+  hasExplicitContent?: boolean;
 }
 
 export interface Analytics {

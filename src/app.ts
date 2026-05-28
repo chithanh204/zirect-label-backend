@@ -11,6 +11,10 @@ import albumRoutes from '@routes/albumRoutes';
 import analyticsRoutes from '@routes/analyticsRoutes';
 import dashboardRoutes from '@routes/dashboardRoutes';
 import uploadRoutes from '@routes/uploadRoutes';
+import syncRoutes from '@routes/syncRoutes';
+import homePageRoutes from '@routes/homePageRoutes';
+import contractRoutes from '@routes/contractRoutes';
+import revenueRoutes from '@routes/revenueRoutes';
 
 const app: Express = express();
 
@@ -50,6 +54,10 @@ app.use('/api/albums', albumRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/admin', dashboardRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/sync', syncRoutes);
+app.use('/api/home-page', homePageRoutes);
+app.use('/api/contracts', contractRoutes);
+app.use('/api/revenue', revenueRoutes);
 
 // 404 Handler
 app.use(notFoundHandler);

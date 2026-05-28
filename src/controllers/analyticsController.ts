@@ -31,7 +31,7 @@ export const getAnalytics = async (req: AuthRequest, res: Response): Promise<voi
     const totalStreams = filteredAnalytics.reduce((sum, a) => sum + a.streams, 0);
 
     // Calculate Unpaid Revenue for the artist by platform
-    const platforms = ['spotify', 'apple_music', 'youtube_music', 'tiktok'];
+    const platforms = ['spotify', 'youtube_music'];
     const unpaidByPlatform: Record<string, number> = {};
     platforms.forEach(p => unpaidByPlatform[p] = 0);
 
@@ -44,19 +44,19 @@ export const getAnalytics = async (req: AuthRequest, res: Response): Promise<voi
       platforms.forEach(p => {
         // Calculate album revenue for this platform
         // Normalize 'youtube' to 'youtube_music' if necessary
-        const albumPlatformRevenues = album.platformRevenues.filter(pr => 
+        const albumPlatformRevenues = album.platformRevenues.filter(pr =>
           pr.platform.toLowerCase() === p || (p === 'youtube_music' && pr.platform.toLowerCase() === 'youtube')
         );
         const platformRev = albumPlatformRevenues.reduce((sum, pr) => sum + pr.totalRevenue, 0);
 
-        const albumPlatformPayments = album.platformPayments.filter(pp => 
+        const albumPlatformPayments = album.platformPayments.filter(pp =>
           pp.platform.toLowerCase() === p || (p === 'youtube_music' && pp.platform.toLowerCase() === 'youtube')
         );
         const platformPay = albumPlatformPayments.reduce((sum, pp) => sum + pp.amount, 0);
 
         const remaining = platformRev - platformPay;
         const artistShare = remaining * (artistPercentage / 100);
-        
+
         unpaidByPlatform[p] += artistShare;
         totalUnpaidRevenue += artistShare;
       });
@@ -66,7 +66,7 @@ export const getAnalytics = async (req: AuthRequest, res: Response): Promise<voi
       // Normalize platform name for streams
       let platformKey = a.platform.toLowerCase();
       if (platformKey === 'youtube') platformKey = 'youtube_music';
-      
+
       if (!acc[platformKey]) {
         acc[platformKey] = { streams: 0 };
       }

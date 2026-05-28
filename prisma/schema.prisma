@@ -44,16 +44,24 @@ model Artist {
   followers      Int      @default(0)
   totalStreams   Int      @default(0)
   totalRevenue   Float    @default(0)
+  balance        Float    @default(0)
+  totalPaid      Float    @default(0)
   status         ArtistStatus @default(active)
   joinedAt       DateTime @default(now())
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  paypalAccount  String?
+  composerName   String?
+  isActive       Boolean  @default(true)
+  isAdmin        Boolean  @default(false)
 
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   albums          Album[]
   analytics       Analytics[]
   collaborations  AlbumCollaborator[]
   revenueSplits   RevenueSplit[]
+  paymentLogs     PaymentLog[]
 
   @@map("artists")
 }
@@ -75,6 +83,8 @@ model Album {
   title            String
   artistId         String
   artistName       String
+  albumId          String?
+  youtubeId        String?
   releaseDate      DateTime?
   coverArt         String?
   status           AlbumStatus @default(draft)
@@ -82,6 +92,18 @@ model Album {
   revenue          Float     @default(0)
   upc              String?
   rejectionReason  String?
+  
+  // Album metadata
+  displayArtist    String?
+  primaryArtists   String?
+  featuringArtists String?
+  pYear            Int?
+  cYear            Int?
+  pLine            String?
+  cLine            String?
+  genre            String?
+  subgenre         String?
+  
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -92,6 +114,7 @@ model Album {
   revenueSplits    RevenueSplit[]
   platformRevenues PlatformRevenue[]
   platformPayments PlatformPayment[]
+  paymentLogDetails PaymentLogDetail[]
 
   @@map("albums")
 }
@@ -100,7 +123,6 @@ enum AlbumStatus {
   draft
   submitted
   approved
-  delivering
   distributed
   rejected
 }
@@ -109,12 +131,26 @@ model Track {
   id        String   @id @default(cuid())
   albumId   String
   title     String
-  duration  Int      // seconds
   isrc      String?
   featuring String?
   streams   Int      @default(0)
   revenue   Float    @default(0)
-  position  Int
+  
+  // Track metadata
+  mixTitle        String?
+  primaryArtists  String?
+  remixingArtists String?
+  composers String?
+  lyricists String?
+  language  String?
+  pYear     Int?
+  cYear     Int?
+  pLine     String?
+  cLine     String?
+  genre     String?
+  subgenre  String?
+  hasExplicitContent Boolean @default(false)
+  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -127,7 +163,7 @@ model Track {
 model TrackPlatform {
   id            String   @id @default(cuid())
   trackId       String
-  platform      String   // "spotify", "youtube_music", "apple_music", "tiktok"
+  platform      String   // "spotify", "youtube_music"
   streams       Int      @default(0)
   copyrightFlag Boolean  @default(false)
   url           String?
@@ -157,7 +193,7 @@ model AlbumCollaborator {
 model PlatformRevenue {
   id           String   @id @default(cuid())
   albumId      String
-  platform     String   // "spotify", "youtube_music", "apple_music", "tiktok"
+  platform     String   // "spotify", "youtube_music"
   totalRevenue Float    @default(0)
   updatedAt    DateTime @updatedAt
 
@@ -170,7 +206,7 @@ model PlatformRevenue {
 model PlatformPayment {
   id        String   @id @default(cuid())
   albumId   String
-  platform  String   // "spotify", "youtube_music", "apple_music", "tiktok"
+  platform  String   // "spotify", "youtube_music"
   amount    Float
   note      String?
   paidAt    DateTime @default(now())
@@ -202,7 +238,7 @@ model Analytics {
   date      DateTime
   streams   Int      @default(0)
   revenue   Float    @default(0)
-  platform  String   // spotify, apple_music, youtube, etc.
+  platform  String   // spotify, youtube_music, lastfm, etc.
   region    String?  // US, UK, DE, FR, etc.
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -214,5 +250,70 @@ model Analytics {
   @@index([artistId])
   @@index([albumId])
   @@index([date])
+}
+
+model HomePage {
+  id          String   @id @default("singleton")
+  logoUrl     String?
+  title       String?
+  description String?
+  updatedAt   DateTime @updatedAt
+
+  @@map("homepage_configs")
+}
+
+model FeaturedRelease {
+  id          String   @id @default(cuid())
+  trackName   String
+  artistNames String
+  spotifyLink String?
+  youtubeLink String?
+  coverArt    String?
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("featured_releases")
+}
+
+model ContractSubmission {
+  id         String   @id @default(cuid())
+  artistName String
+  email      String
+  subject    String
+  message    String
+  demoLink   String?
+  status     String   @default("new") // "new", "reviewed"
+  createdAt  DateTime @default(now())
+
+  @@map("contract_submissions")
+}
+
+model PaymentLog {
+  id            String   @id @default(cuid())
+  artistId      String
+  amount        Float
+  paypalAccount String
+  transactionId String
+  receiptUrl    String?
+  note          String?
+  paidAt        DateTime @default(now())
+
+  artist        Artist   @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  details       PaymentLogDetail[]
+
+  @@map("payment_logs")
+}
+
+model PaymentLogDetail {
+  id           String     @id @default(cuid())
+  paymentLogId String
+  albumId      String
+  amount       Float
+
+  paymentLog   PaymentLog @relation(fields: [paymentLogId], references: [id], onDelete: Cascade)
+  album        Album      @relation(fields: [albumId], references: [id], onDelete: Cascade)
+
+  @@map("payment_log_details")
 }
 

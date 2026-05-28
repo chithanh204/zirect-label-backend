@@ -87,7 +87,7 @@ export const db = {
   async getAlbumsByArtistId(artistId: string) {
     return await prisma.album.findMany({
       where: { artistId },
-      include: { 
+      include: {
         tracks: true,
         platformRevenues: true,
         revenueSplits: true,
@@ -118,6 +118,12 @@ export const db = {
     });
   },
 
+  async deleteAlbum(id: string) {
+    return await prisma.album.delete({
+      where: { id },
+    });
+  },
+
   // ============ ALBUM DETAIL ============
   async getAlbumDetail(id: string) {
     return await prisma.album.findUnique({
@@ -125,18 +131,26 @@ export const db = {
       include: {
         tracks: {
           include: { platforms: true },
-          orderBy: { position: 'asc' },
+        orderBy: { createdAt: 'asc' },
         },
-        artist: { select: { id: true, name: true, avatar: true, email: true } },
+        artist: { select: { id: true, name: true, avatar: true, email: true, paypalAccount: true, composerName: true } },
         collaborators: {
           include: { artist: { select: { id: true, name: true, avatar: true } } },
         },
         revenueSplits: {
-          include: { artist: { select: { id: true, name: true, avatar: true } } },
+          include: { artist: { select: { id: true, name: true, avatar: true, paypalAccount: true, composerName: true } } },
         },
         platformRevenues: true,
         platformPayments: {
           orderBy: { paidAt: 'desc' },
+        },
+        paymentLogDetails: {
+          include: {
+            paymentLog: {
+              include: { artist: { select: { id: true, name: true } } }
+            }
+          },
+          orderBy: { id: 'desc' },
         },
       },
     });
@@ -271,6 +285,29 @@ export const db = {
     });
   },
 
+  // ============ TRACKS ============
+  async getTracksByAlbumId(albumId: string) {
+    return await prisma.track.findMany({
+      where: { albumId },
+      include: { platforms: true },
+      orderBy: { createdAt: 'asc' },
+    });
+  },
+
+  async getTrackById(id: string) {
+    return await prisma.track.findUnique({
+      where: { id },
+      include: { platforms: true },
+    });
+  },
+
+  async updateTrack(id: string, data: any) {
+    return await prisma.track.update({
+      where: { id },
+      data,
+      include: { platforms: true },
+    });
+  },
   // ============ ANALYTICS ============
   async getAnalytics() {
     return await prisma.analytics.findMany({
@@ -281,6 +318,13 @@ export const db = {
   async getAnalyticsByArtistId(artistId: string) {
     return await prisma.analytics.findMany({
       where: { artistId },
+      orderBy: { date: 'desc' },
+    });
+  },
+
+  async getAnalyticsByAlbumId(albumId: string) {
+    return await prisma.analytics.findMany({
+      where: { albumId },
       orderBy: { date: 'desc' },
     });
   },

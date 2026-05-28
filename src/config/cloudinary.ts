@@ -28,14 +28,23 @@ export const uploadToCloudinary = (
   folder: string = 'zirect/avatars'
 ): Promise<CloudinaryUploadResult> => {
   return new Promise((resolve, reject) => {
+    // Use different transformations based on folder (covers need higher quality)
+    const isCover = folder.includes('covers');
+    const transformation = isCover
+      ? [
+          { width: 3000, height: 3000, crop: 'limit' as const },
+          { quality: 90, fetch_format: 'auto' as const },
+        ]
+      : [
+          { width: 500, height: 500, crop: 'limit' as const },
+          { quality: 'auto' as const, fetch_format: 'auto' as const },
+        ];
+
     const uploadStream = cloudinary.uploader.upload_stream(
       {
         folder,
         resource_type: 'image',
-        transformation: [
-          { width: 500, height: 500, crop: 'limit' },
-          { quality: 'auto', fetch_format: 'auto' },
-        ],
+        transformation,
       },
       (error, result) => {
         if (error) {

@@ -6,7 +6,7 @@ const router: ExpressRouter = Router();
 
 router.post('/login', authController.login);
 router.post('/register', authController.register);
-router.get('/me', authController.getCurrentUser);
+router.get('/me', authMiddleware, authController.getCurrentUser);
 router.post('/logout', authController.logout);
 router.put('/password', authMiddleware, authController.updatePassword);
 

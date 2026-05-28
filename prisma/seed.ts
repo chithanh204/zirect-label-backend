@@ -97,29 +97,21 @@ async function main() {
         create: [
           {
             title: 'Starboy',
-            duration: 230,
-            position: 1,
             streams: 200000000,
             revenue: 1000000,
           },
           {
             title: 'Party Monster',
-            duration: 214,
-            position: 2,
             streams: 150000000,
             revenue: 750000,
           },
           {
             title: 'False Alarm',
-            duration: 198,
-            position: 3,
             streams: 120000000,
             revenue: 600000,
           },
           {
             title: 'Reminder',
-            duration: 287,
-            position: 4,
             streams: 150000000,
             revenue: 750000,
           },
@@ -144,22 +136,16 @@ async function main() {
         create: [
           {
             title: 'Certified Lover Boy',
-            duration: 245,
-            position: 1,
             streams: 300000000,
             revenue: 1500000,
           },
           {
             title: 'Enough Tonight',
-            duration: 198,
-            position: 2,
             streams: 250000000,
             revenue: 1250000,
           },
           {
             title: 'Way 2 Sexy',
-            duration: 216,
-            position: 3,
             streams: 250000000,
             revenue: 1250000,
           },
@@ -187,7 +173,7 @@ async function main() {
         date,
         streams: Math.floor(Math.random() * 500000 + 100000),
         revenue: Math.random() * 5000 + 1000,
-        platform: ['spotify', 'apple_music', 'youtube'][i % 3],
+        platform: ['spotify', 'youtube_music'][i % 2],
         region: ['US', 'UK', 'DE', 'FR', 'BR'][i % 5],
       },
     });
@@ -200,13 +186,51 @@ async function main() {
         date,
         streams: Math.floor(Math.random() * 600000 + 150000),
         revenue: Math.random() * 6000 + 1500,
-        platform: ['spotify', 'apple_music', 'youtube'][i % 3],
+        platform: ['spotify', 'youtube_music'][i % 2],
         region: ['US', 'UK', 'DE', 'FR', 'BR'][i % 5],
       },
     });
   }
 
   console.log('✅ Created 60 analytics records (30 days × 2 artists)\n');
+
+  // Create default homepage config
+  console.log('🏠 Seeding HomePage configuration...');
+  await prisma.homePage.upsert({
+    where: { id: 'singleton' },
+    update: {},
+    create: {
+      id: 'singleton',
+      logoUrl: '',
+      title: 'Zirect Label',
+      description: 'Your premier music distribution partner'
+    }
+  });
+
+  // Create some default featured releases
+  console.log('💿 Seeding Featured Releases...');
+  const sampleReleases = [
+    {
+      trackName: 'Starboy',
+      artistNames: 'The Weeknd',
+      spotifyLink: 'https://open.spotify.com/track/7MXVkk9YM1w2v4NVqqyCsg',
+      youtubeLink: 'https://music.youtube.com/watch?v=34Na4j8AVgA',
+      coverArt: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300',
+      order: 1
+    },
+    {
+      trackName: 'Certified Lover Boy',
+      artistNames: 'Drake',
+      spotifyLink: 'https://open.spotify.com/track/3ee8J12t6ZgHgZlh7v1v2a',
+      youtubeLink: 'https://music.youtube.com/watch?v=T82z7NnU2E4',
+      coverArt: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=300',
+      order: 2
+    }
+  ];
+
+  for (const release of sampleReleases) {
+    await prisma.featuredRelease.create({ data: release });
+  }
 
   console.log('================================');
   console.log('✨ Database seeded successfully!');

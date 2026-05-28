@@ -7,9 +7,16 @@ const router: ExpressRouter = Router();
 router.get('/', artistController.getAllArtists);
 router.get('/stats', artistController.getArtistStats);
 router.post('/', authMiddleware, adminMiddleware, artistController.createArtist);
+router.put('/:id', authMiddleware, adminMiddleware, artistController.updateArtistAdmin);
 router.post('/:id/reset-password', authMiddleware, adminMiddleware, artistController.resetArtistPassword);
 router.get('/profile/me', authMiddleware, artistMiddleware, artistController.getMyArtistProfile);
 router.put('/profile/me', authMiddleware, artistMiddleware, artistController.updateArtistProfile);
+
+// PHASE 3: Artist Portal Routes
+router.get('/dashboard/overview', authMiddleware, artistMiddleware, artistController.getArtistDashboard);
+router.get('/albums/my-albums', authMiddleware, artistMiddleware, artistController.getArtistAlbums);
+router.get('/albums/:id/revenue', authMiddleware, artistMiddleware, artistController.getArtistAlbumRevenue);
+
 router.get('/:id', artistController.getArtistById);
 router.put('/:id/payment/verify', authMiddleware, adminMiddleware, artistController.verifyPaymentInfo);
 

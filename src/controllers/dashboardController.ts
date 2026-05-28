@@ -1,7 +1,8 @@
 import { Response } from 'express';
 import type { AuthRequest } from '@middleware/auth';
 import { sendSuccess, sendError, handleError } from '@utils/response';
-import { db } from '@models/prisma';
+import { db, prisma } from '@models/prisma';
+import { spotifyService } from '@services/spotifyService';
 
 export const getDashboardOverview = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -106,7 +107,7 @@ export const getAlbumProcessingQueue = async (_req: AuthRequest, res: Response):
     const albums = await db.getAlbums();
 
     const queue = albums
-      .filter((a) => ['submitted', 'approved', 'delivering'].includes(a.status))
+      .filter((a) => ['submitted', 'approved'].includes(a.status))
       .map((album) => ({
         id: album.id,
         title: album.title,
@@ -136,7 +137,6 @@ const getAlbumProgress = (status: string): number => {
     draft: 10,
     submitted: 25,
     approved: 50,
-    delivering: 75,
     distributed: 100,
   };
   return progressMap[status] || 0;
@@ -179,5 +179,134 @@ export const rejectAlbum = async (req: AuthRequest, res: Response): Promise<void
     sendSuccess(res, updatedAlbum, 'Album rejected successfully', 200);
   } catch (error) {
     handleError(res, error, 'Failed to reject album');
+  }
+};
+
+export const getContractReports = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user || req.user.type !== 'admin') {
+      sendError(res, 'Admin access required', 403);
+      return;
+    }
+
+    const contracts = await prisma.contractSubmission.findMany({
+      orderBy: { createdAt: 'desc' }
+    });
+    sendSuccess(res, contracts, 'Contract reports retrieved successfully', 200);
+  } catch (error) {
+    handleError(res, error, 'Failed to get contract reports');
+  }
+};
+
+export const getDiscrepancyReports = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user || req.user.type !== 'admin') {
+      sendError(res, 'Admin access required', 403);
+      return;
+    }
+
+    const [copyrightFlags, missingIds] = await Promise.all([
+      prisma.trackPlatform.findMany({
+        where: { copyrightFlag: true },
+        include: {
+          track: {
+            include: {
+              album: true
+            }
+          }
+        }
+      }),
+      prisma.album.findMany({
+        where: {
+          status: 'distributed',
+          OR: [
+            { albumId: null },
+            { youtubeId: null }
+          ]
+        }
+      })
+    ]);
+
+    const distributedAlbums = await prisma.album.findMany({
+      where: {
+        status: 'distributed',
+        albumId: { not: null }
+      }
+    });
+
+    const spotifyDiscrepancies = [];
+
+    for (const album of distributedAlbums) {
+      if (!album.albumId) continue;
+      try {
+        const spotifyAlbum = await spotifyService.getAlbum(album.albumId);
+        if (spotifyAlbum) {
+          const localTracksCount = await prisma.track.count({
+            where: { albumId: album.id }
+          });
+
+          const spotifyArtists = spotifyAlbum.artists.map((a: any) => a.name).join(", ");
+          const localArtists = album.displayArtist || album.artistName;
+
+          const titleMismatch = spotifyAlbum.name !== album.title;
+          const tracksMismatch = spotifyAlbum.total_tracks !== localTracksCount;
+          const artistMismatch = spotifyArtists.toLowerCase() !== localArtists.toLowerCase();
+
+          if (titleMismatch || tracksMismatch || artistMismatch) {
+            const mismatches = [];
+            if (titleMismatch) mismatches.push('title');
+            if (tracksMismatch) mismatches.push('totalTracks');
+            if (artistMismatch) mismatches.push('displayArtist');
+
+            spotifyDiscrepancies.push({
+              albumId: album.id,
+              spotifyAlbumId: album.albumId,
+              title: album.title,
+              artistName: album.artistName,
+              displayArtist: album.displayArtist,
+              coverArt: album.coverArt,
+              upc: album.upc,
+              localValue: {
+                title: album.title,
+                totalTracks: localTracksCount,
+                displayArtist: localArtists
+              },
+              spotifyValue: {
+                title: spotifyAlbum.name,
+                totalTracks: spotifyAlbum.total_tracks,
+                displayArtist: spotifyArtists
+              },
+              mismatches
+            });
+          }
+        }
+      } catch (err) {
+        console.error(`Failed to compare spotify metadata for album ${album.id}:`, err);
+      }
+    }
+
+    sendSuccess(res, { copyrightFlags, missingIds, spotifyDiscrepancies }, 'Discrepancy reports retrieved successfully', 200);
+  } catch (error) {
+    handleError(res, error, 'Failed to get discrepancy reports');
+  }
+};
+
+export const getReleaseScheduleReports = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user || req.user.type !== 'admin') {
+      sendError(res, 'Admin access required', 403);
+      return;
+    }
+
+    const albums = await prisma.album.findMany({
+      where: {
+        status: { in: ['approved', 'submitted'] },
+        releaseDate: { not: null }
+      },
+      orderBy: { releaseDate: 'asc' }
+    });
+    sendSuccess(res, albums, 'Release schedule reports retrieved successfully', 200);
+  } catch (error) {
+    handleError(res, error, 'Failed to get release schedule reports');
   }
 };
