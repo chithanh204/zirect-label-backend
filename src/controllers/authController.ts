@@ -73,6 +73,19 @@ export const register = async (req: AuthRequest, res: Response): Promise<void> =
       type: 'artist' as const,
     });
 
+    // Create the associated artist profile
+    await db.createArtist({
+      userId: newUser.id,
+      name,
+      email,
+      bio: '',
+      followers: 0,
+      totalStreams: 0,
+      totalRevenue: 0,
+      status: 'active' as any,
+      joinedAt: new Date(),
+    });
+
     const userWithoutPassword: Omit<typeof newUser, 'password'> & { password?: string } = { ...newUser };
     delete userWithoutPassword.password;
 

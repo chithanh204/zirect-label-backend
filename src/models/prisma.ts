@@ -254,9 +254,10 @@ export const db = {
   async setRevenueSplits(albumId: string, splits: { artistId: string; percentage: number }[]) {
     // Delete existing and recreate
     await prisma.revenueSplit.deleteMany({ where: { albumId } });
-    if (splits.length > 0) {
+    const validSplits = splits.filter(s => s && typeof s.artistId === 'string' && s.artistId.trim() !== '');
+    if (validSplits.length > 0) {
       await prisma.revenueSplit.createMany({
-        data: splits.map(s => ({ albumId, artistId: s.artistId, percentage: s.percentage })),
+        data: validSplits.map(s => ({ albumId, artistId: s.artistId.trim(), percentage: parseFloat(s.percentage as any) || 0 })),
       });
     }
     return await prisma.revenueSplit.findMany({

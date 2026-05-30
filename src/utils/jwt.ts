@@ -9,14 +9,14 @@ export const generateToken = (user: Omit<User, 'password'>): string => {
       email: user.email,
       type: user.type,
     },
-    config.jwt.secret,
+    config.jwt.secret as string,
     { expiresIn: '7d' }
   );
 };
 
 export const verifyToken = (token: string): any => {
   try {
-    return jwt.verify(token, config.jwt.secret);
+    return jwt.verify(token, config.jwt.secret as string);
   } catch (error) {
     return null;
   }

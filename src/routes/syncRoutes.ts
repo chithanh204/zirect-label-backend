@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Router as ExpressRouter } from 'express';
 import {
   syncArtistData,
   syncAlbumData,
@@ -13,7 +13,7 @@ import {
 } from '../controllers/syncController';
 import { authMiddleware } from '../middleware/auth';
 
-const router = Router();
+const router: ExpressRouter = Router();
 
 // All sync routes require authentication
 router.use(authMiddleware);

@@ -35,7 +35,7 @@ export class AlbumImportService {
         };
       }
 
-      const albumId = albumIdMatch[1];
+
 
       // Get album details from Spotify API
       // Note: Would need to implement in spotifyService to get album endpoint

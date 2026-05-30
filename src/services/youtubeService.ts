@@ -23,7 +23,7 @@ export class YouTubeService {
   private apiKey: string;
 
   constructor() {
-    this.apiKey = config.youtube.apiKey;
+    this.apiKey = config.youtube.apiKey || '';
   }
 
   /**

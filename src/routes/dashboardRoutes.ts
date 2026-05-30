@@ -15,6 +15,7 @@ router.get('/reports', authMiddleware, adminMiddleware, dashboardController.getR
 router.get('/reports/contracts', authMiddleware, adminMiddleware, dashboardController.getContractReports);
 router.get('/reports/discrepancies', authMiddleware, adminMiddleware, dashboardController.getDiscrepancyReports);
 router.get('/reports/release-schedule', authMiddleware, adminMiddleware, dashboardController.getReleaseScheduleReports);
+router.get('/reports/analytics', authMiddleware, adminMiddleware, dashboardController.getAdminAnalytics);
 
 router.get(
   '/processing-queue',

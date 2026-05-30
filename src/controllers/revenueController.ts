@@ -33,6 +33,22 @@ export const importRevenue = async (req: AuthRequest, res: Response): Promise<vo
       return;
     }
 
+    const { paymentMonth } = req.body;
+    let paymentDate = new Date();
+    if (paymentMonth) {
+      const match = paymentMonth.match(/^(\d{4})-(\d{2})$/);
+      if (match) {
+        const year = parseInt(match[1], 10);
+        const month = parseInt(match[2], 10) - 1; // 0-indexed month
+        paymentDate = new Date(year, month, 15); // Set to the 15th to avoid timezone shifts
+      } else {
+        const parsed = new Date(paymentMonth);
+        if (!isNaN(parsed.getTime())) {
+          paymentDate = parsed;
+        }
+      }
+    }
+
     console.log('Importing revenue from Excel buffer...');
     const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
@@ -48,22 +64,43 @@ export const importRevenue = async (req: AuthRequest, res: Response): Promise<vo
 
     // Find column mapping from the first row
     const firstRow = data[0];
-    const isrcCol = findColumnName(firstRow, ['isrc']);
-    const unitsCol = findColumnName(firstRow, ['units', 'streams', 'quantity']);
-    const royaltyCol = findColumnName(firstRow, ['royalty', 'total', 'revenue', 'royalty (£)']);
-    const storeCol = findColumnName(firstRow, ['store', 'platform']);
-    const territoryCol = findColumnName(firstRow, ['territory', 'region', 'country']);
+    
+    // Explicit requested columns
+    const musicServiceCol = "Music Service";
+    const artistCol = "Artist";
+    const albumTitleCol = "Album Title";
+    const trackTitleCol = "Track Title";
+    const upcCol = "UPC";
+    const isrcCol = "ISRC";
+    const toLabelCol = "To Label";
+    
+    // Units and territory columns
+    const unitsCol = findColumnName(firstRow, ['units', 'streams', 'quantity', 'total units']);
+    const territoryCol = findColumnName(firstRow, ['territory', 'region', 'country', 'country of sale']);
 
-    if (!isrcCol || !royaltyCol) {
-      sendError(res, `Missing required columns in Excel sheet. (Required: ISRC, Royalty)`, 400);
+    const hasRequiredCols = 
+      musicServiceCol in firstRow &&
+      artistCol in firstRow &&
+      albumTitleCol in firstRow &&
+      trackTitleCol in firstRow &&
+      upcCol in firstRow &&
+      isrcCol in firstRow &&
+      toLabelCol in firstRow;
+
+    if (!hasRequiredCols) {
+      sendError(res, 'Missing required columns in Excel sheet. (Required: Music Service, Artist, Album Title, Track Title, UPC, ISRC, To Label)', 400);
       return;
     }
 
     console.log(`Column mappings identified: 
+      - Music Service: "${musicServiceCol}"
+      - Artist: "${artistCol}"
+      - Album Title: "${albumTitleCol}"
+      - Track Title: "${trackTitleCol}"
+      - UPC: "${upcCol}"
       - ISRC: "${isrcCol}"
-      - Royalty: "${royaltyCol}"
+      - To Label (Royalty): "${toLabelCol}"
       - Units/Streams: "${unitsCol || 'Not found'}"
-      - Platform/Store: "${storeCol || 'Not found'}"
       - Region/Territory: "${territoryCol || 'Not found'}"
     `);
 
@@ -73,24 +110,42 @@ export const importRevenue = async (req: AuthRequest, res: Response): Promise<vo
     let totalStreamsAdded = 0;
     const affectedArtistIds = new Set<string>();
 
-    // Process rows sequentially inside a Prisma transaction or loop
-    // To be fast and robust, we loop through and update records
     for (const row of data) {
+      const musicServiceRaw = row[musicServiceCol];
       const isrcRaw = row[isrcCol];
-      if (!isrcRaw) {
+      const upcRaw = row[upcCol];
+
+      if (!musicServiceRaw || !isrcRaw || !upcRaw) {
+        ignoredCount++;
+        continue;
+      }
+
+      const musicService = String(musicServiceRaw).trim().toLowerCase();
+      
+      // Filter strictly for spotify and youtube
+      const isSpotify = musicService === 'spotify - stream';
+      const isYouTube = musicService === 'youtube - subscription' || musicService === 'youtube - youtube ads revenue';
+
+      if (!isSpotify && !isYouTube) {
         ignoredCount++;
         continue;
       }
 
       const isrc = String(isrcRaw).trim().toUpperCase();
-      const royalty = parseFloat(row[royaltyCol]) || 0;
+      const upc = String(upcRaw).trim();
+      const royalty = parseFloat(row[toLabelCol]) || 0;
       const units = unitsCol ? (parseInt(row[unitsCol], 10) || 0) : 0;
-      const store = storeCol ? (String(row[storeCol] || '').trim()) : 'Unknown';
       const territory = territoryCol ? (String(row[territoryCol] || '').trim()) : 'Unknown';
+      const normalizedPlatform = isSpotify ? 'spotify' : 'youtube_music';
 
-      // 1. Find the track by ISRC
+      // 1. Find the track by ISRC and UPC
       const track = await prisma.track.findFirst({
-        where: { isrc: { equals: isrc, mode: 'insensitive' } },
+        where: {
+          isrc: { equals: isrc, mode: 'insensitive' },
+          album: {
+            upc: { equals: upc, mode: 'insensitive' }
+          }
+        },
         include: {
           album: {
             include: {
@@ -148,41 +203,32 @@ export const importRevenue = async (req: AuthRequest, res: Response): Promise<vo
         }
       });
 
-      // 5. Update platform specific stream/revenue if store exists
-      if (store && store !== 'Unknown') {
-        const platform = store.toLowerCase().replace(/[\s_]+/g, '');
-        const normalizedPlatform = platform.includes('spotify')
-          ? 'spotify'
-          : platform.includes('youtube')
-          ? 'youtube_music'
-          : platform;
+      // 5. Update platform specific stream/revenue
+      // Upsert TrackPlatform streams
+      await prisma.trackPlatform.upsert({
+        where: { trackId_platform: { trackId: track.id, platform: normalizedPlatform } },
+        update: { streams: { increment: units } },
+        create: { trackId: track.id, platform: normalizedPlatform, streams: units }
+      });
 
-        // Upsert TrackPlatform streams
-        await prisma.trackPlatform.upsert({
-          where: { trackId_platform: { trackId: track.id, platform: normalizedPlatform } },
-          update: { streams: { increment: units } },
-          create: { trackId: track.id, platform: normalizedPlatform, streams: units }
-        });
+      // Upsert PlatformRevenue
+      await prisma.platformRevenue.upsert({
+        where: { albumId_platform: { albumId: album.id, platform: normalizedPlatform } },
+        update: { totalRevenue: { increment: royalty } },
+        create: { albumId: album.id, platform: normalizedPlatform, totalRevenue: royalty }
+      });
 
-        // Upsert PlatformRevenue
-        await prisma.platformRevenue.upsert({
-          where: { albumId_platform: { albumId: album.id, platform: normalizedPlatform } },
-          update: { totalRevenue: { increment: royalty } },
-          create: { albumId: album.id, platform: normalizedPlatform, totalRevenue: royalty }
-        });
-      }
-
-      // 6. Ghi nhận Analytics để vẽ biểu đồ doanh thu
+      // 6. Record Analytics for revenue charts
       for (const split of splits) {
         const artistShare = royalty * (split.percentage / 100);
         await prisma.analytics.create({
           data: {
             artistId: split.artistId,
             albumId: album.id,
-            date: new Date(),
+            date: paymentDate, // Use the selected payment month date!
             streams: Math.round(units * (split.percentage / 100)),
             revenue: artistShare,
-            platform: storeCol ? (String(row[storeCol] || 'Unknown').trim()) : 'Distributor',
+            platform: normalizedPlatform,
             region: territory || 'Global',
           }
         });

@@ -44,8 +44,8 @@ export class SpotifyService {
   private tokenExpiration: number = 0;
 
   constructor() {
-    this.clientId = config.spotify.clientId;
-    this.clientSecret = config.spotify.clientSecret;
+    this.clientId = config.spotify.clientId || '';
+    this.clientSecret = config.spotify.clientSecret || '';
   }
 
   /**
@@ -74,7 +74,7 @@ export class SpotifyService {
 
       this.accessToken = response.data.access_token;
       this.tokenExpiration = now + (response.data.expires_in * 1000) - 60000; // Refresh 1 min before expiry
-      return this.accessToken;
+      return this.accessToken || '';
     } catch (error) {
       console.error('Spotify authentication error:', error);
       throw new Error('Failed to authenticate with Spotify');
@@ -179,6 +179,43 @@ export class SpotifyService {
     } catch (error) {
       console.error('Spotify get track error:', error);
       return null;
+    }
+  }
+
+  /**
+   * Get multiple tracks details in batches
+   */
+  async getTracksMultiple(trackIds: string[]): Promise<SpotifyTrack[]> {
+    if (trackIds.length === 0) return [];
+    try {
+      const token = await this.getAccessToken();
+      const response = await axios.get(`${SPOTIFY_API_URL}/tracks`, {
+        params: {
+          ids: trackIds.join(','),
+        },
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      return response.data.tracks.map((item: any) => {
+        if (!item) return null;
+        return {
+          id: item.id,
+          name: item.name,
+          artistName: item.artists[0]?.name || 'Unknown',
+          albumName: item.album?.name || '',
+          releaseDate: item.album?.release_date || '',
+          duration: item.duration_ms,
+          popularity: item.popularity || 0,
+          imageUrl: item.album?.images[0]?.url,
+          previewUrl: item.preview_url,
+          externalUrl: item.external_urls?.spotify,
+        };
+      }).filter(Boolean);
+    } catch (error) {
+      console.error('Spotify get multiple tracks error:', error);
+      return [];
     }
   }
 

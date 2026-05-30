@@ -136,8 +136,8 @@ export class PlatformSearchService {
    * Get recommendations similar to a track
    */
   async getSimilarTracks(
-    artistName: string,
-    trackName: string,
+    _artistName: string,
+    _trackName: string,
     limit: number = 10
   ): Promise<PlatformTrack[]> {
     try {

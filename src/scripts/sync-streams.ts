@@ -5,21 +5,6 @@ const prisma = new PrismaClient();
 async function syncStreams() {
   console.log('Syncing streams...');
 
-  // 1. Sync Track -> Album total streams
-  const albums = await prisma.album.findMany({
-    include: { tracks: true }
-  });
-
-  for (const album of albums) {
-    // If the album already has totalStreams but tracks have 0, we shouldn't overwrite it with 0 
-    // unless we strictly want to sync from tracks. 
-    // Wait, the user said old data might be wrong. Let's just sum track streams, BUT if tracks have no stream platforms, 
-    // they are 0. Our mock data had album.totalStreams set to 800M etc without track platform data.
-    // Let's NOT zero out the album streams. We will just ensure Artist streams are synced from Album streams!
-    
-    // So we just sync Artist streams from Album streams.
-  }
-
   // 2. Sync Album -> Artist total streams
   const artists = await prisma.artist.findMany();
   for (const artist of artists) {

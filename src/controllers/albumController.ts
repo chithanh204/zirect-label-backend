@@ -473,14 +473,17 @@ export const updateRevenueSplits = async (req: AuthRequest, res: Response): Prom
       return;
     }
 
+    // Filter out invalid splits
+    const validSplits = splits.filter((s: any) => s && typeof s.artistId === 'string' && s.artistId.trim() !== '');
+
     // Validate total = 100
-    const total = splits.reduce((sum: number, s: any) => sum + (s.percentage || 0), 0);
+    const total = validSplits.reduce((sum: number, s: any) => sum + (parseFloat(s.percentage as any) || 0), 0);
     if (Math.abs(total - 100) > 0.01) {
       sendError(res, `Total percentage must equal 100% (currently ${total}%)`, 400);
       return;
     }
 
-    const result = await db.setRevenueSplits(id, splits);
+    const result = await db.setRevenueSplits(id, validSplits);
     sendSuccess(res, result, 'Revenue splits updated', 200);
   } catch (error) {
     handleError(res, error, 'Failed to update revenue splits');
@@ -681,9 +684,7 @@ export const getAlbumPaymentSummary = async (req: AuthRequest, res: Response): P
     }
 
     // Get all system artists to match by name
-    const systemArtists = await prisma.artist.findMany({
-      where: { isActive: true }
-    });
+    const systemArtists = await prisma.artist.findMany();
 
     // Resolve custom names to system artist names if a match is found
     const resolveName = (name: string): string => {
@@ -816,9 +817,10 @@ export const getAlbumPaymentSummary = async (req: AuthRequest, res: Response): P
 
     for (const [name, rolesSet] of artistRolesMap.entries()) {
       const roles = Array.from(rolesSet);
-      // Try to find matching system artist by name (case-insensitive)
+      // Try to find matching system artist by name or composerName (case-insensitive)
       const systemArtist = systemArtists.find(
-        (a) => a.name.toLowerCase() === name.trim().toLowerCase()
+        (a) => a.name.toLowerCase() === name.trim().toLowerCase() ||
+               (a.composerName && a.composerName.toLowerCase() === name.trim().toLowerCase())
       );
 
       if (systemArtist) {
