@@ -39,7 +39,12 @@ export const getAnalytics = async (req: AuthRequest, res: Response): Promise<voi
     artistAlbums.forEach(album => {
       // Find artist split
       const split = album.revenueSplits.find(s => s.artistId === artist.id);
-      const artistPercentage = split ? split.percentage : 100;
+      let artistPercentage = 100;
+      if (album.revenueSplits.length > 0) {
+        artistPercentage = split ? split.percentage : 0;
+      } else if (album.artistId !== artist.id) {
+        artistPercentage = 0;
+      }
 
       platforms.forEach(p => {
         // Calculate album revenue for this platform

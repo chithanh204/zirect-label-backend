@@ -331,21 +331,46 @@ export const getArtistDashboard = async (req: AuthRequest, res: Response): Promi
     const totalAlbums = artistAlbums.length;
     const distributedAlbums = artistAlbums.filter((a) => a.status === 'distributed').length;
     const totalStreams = artistAlbums.reduce((sum, a) => sum + a.totalStreams, 0);
-    const totalRevenue = artistAlbums.reduce((sum, a) => sum + a.revenue, 0);
+    
+    // Calculate total revenue based on splits
+    let artistTotalRevenue = 0;
+    artistAlbums.forEach((album) => {
+      const splits = album.revenueSplits || [];
+      let splitPercent = 100;
+      if (splits.length > 0) {
+        const artistSplit = splits.find((s: any) => s.artistId === artist.id);
+        splitPercent = artistSplit ? artistSplit.percentage : 0;
+      } else if (album.artistId !== artist.id) {
+        splitPercent = 0;
+      }
+      artistTotalRevenue += (album.revenue * splitPercent) / 100;
+    });
 
     // Get recent activities (latest 5 albums)
     const recentActivities = [...artistAlbums]
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       .slice(0, 5)
-      .map((album) => ({
-        id: album.id,
-        title: album.title,
-        status: album.status,
-        releaseDate: album.releaseDate,
-        totalStreams: album.totalStreams,
-        revenue: album.revenue,
-        updatedAt: album.updatedAt,
-      }));
+      .map((album) => {
+        const splits = album.revenueSplits || [];
+        let splitPercent = 100;
+        if (splits.length > 0) {
+          const artistSplit = splits.find((s: any) => s.artistId === artist.id);
+          splitPercent = artistSplit ? artistSplit.percentage : 0;
+        } else if (album.artistId !== artist.id) {
+          splitPercent = 0;
+        }
+        const artistRevenue = album.revenue * (splitPercent / 100);
+
+        return {
+          id: album.id,
+          title: album.title,
+          status: album.status,
+          releaseDate: album.releaseDate,
+          totalStreams: album.totalStreams,
+          revenue: artistRevenue,
+          updatedAt: album.updatedAt,
+        };
+      });
 
     sendSuccess(
       res,
@@ -360,7 +385,7 @@ export const getArtistDashboard = async (req: AuthRequest, res: Response): Promi
           averageStreamsPerAlbum:
             totalAlbums > 0 ? Math.round(totalStreams / totalAlbums) : 0,
           averageRevenuePerAlbum:
-            totalAlbums > 0 ? Math.round(totalRevenue / totalAlbums) : 0,
+            totalAlbums > 0 ? Math.round(artistTotalRevenue / totalAlbums) : 0,
         },
         recentActivities,
       },
@@ -405,19 +430,31 @@ export const getArtistAlbums = async (req: AuthRequest, res: Response): Promise<
     const skip = (pageNum - 1) * limitNum;
     const paginatedAlbums = artistAlbums.slice(skip, skip + limitNum);
 
-    const albumsWithRevenue = paginatedAlbums.map((album) => ({
-      id: album.id,
-      title: album.title,
-      artistName: album.artistName,
-      releaseDate: album.releaseDate,
-      coverArt: album.coverArt,
-      status: album.status,
-      totalStreams: album.totalStreams,
-      totalRevenue: album.revenue,
-      unpaidRevenue: album.revenue, // Will be calculated more precisely if payment tracking is added
-      createdAt: album.createdAt,
-      updatedAt: album.updatedAt,
-    }));
+    const albumsWithRevenue = paginatedAlbums.map((album) => {
+      const splits = album.revenueSplits || [];
+      let splitPercent = 100;
+      if (splits.length > 0) {
+        const artistSplit = splits.find((s: any) => s.artistId === artist.id);
+        splitPercent = artistSplit ? artistSplit.percentage : 0;
+      } else if (album.artistId !== artist.id) {
+        splitPercent = 0;
+      }
+      const artistRevenue = album.revenue * (splitPercent / 100);
+
+      return {
+        id: album.id,
+        title: album.title,
+        artistName: album.artistName,
+        releaseDate: album.releaseDate,
+        coverArt: album.coverArt,
+        status: album.status,
+        totalStreams: album.totalStreams,
+        totalRevenue: artistRevenue,
+        unpaidRevenue: artistRevenue, // Will be calculated more precisely if payment tracking is added
+        createdAt: album.createdAt,
+        updatedAt: album.updatedAt,
+      };
+    });
 
     sendSuccess(
       res,

@@ -86,7 +86,13 @@ export const db = {
 
   async getAlbumsByArtistId(artistId: string) {
     return await prisma.album.findMany({
-      where: { artistId },
+      where: {
+        OR: [
+          { artistId },
+          { collaborators: { some: { artistId } } },
+          { revenueSplits: { some: { artistId } } }
+        ]
+      },
       include: {
         tracks: true,
         platformRevenues: true,
